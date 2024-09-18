@@ -268,7 +268,8 @@ MODULE_LICENSE("GPL");
 #define NPREAL_NET_SETTING			5
 #define NPREAL_NET_GET_TTY_STATUS	6
 
-#define	NPREAL_CMD_TIMEOUT		NP_TIMEOUT*HZ  // 10 seconds
+//#define	NPREAL_CMD_TIMEOUT		NP_TIMEOUT*HZ  // 10 seconds
+#define	NPREAL_CMD_TIMEOUT			10000
 #define NPREAL_CMD_TRY				2
 
 #define	NPREAL_NET_CMD_RETRIEVE		1
@@ -475,8 +476,11 @@ static void	npreal_do_softint(struct work_struct *work);
 static void npreal_flush_to_ldisc(struct work_struct *work);
 static int	npreal_open(struct tty_struct *,struct file *);
 static void	npreal_close(struct tty_struct *,struct file *);
+#if LINUX_VERSION_CODE < VERSION_CODE(6,6,0)
 static int	npreal_write(struct tty_struct *,const unsigned char *,int);
-
+#else
+static ssize_t	npreal_write(struct tty_struct *,const u8 *,size_t);
+#endif
 static _REDHAT_INT_ npreal_write_room(struct tty_struct *);
 static void	npreal_flush_buffer(struct tty_struct *);
 static void	npreal_ldisc_flush_buffer(struct tty_struct *);
@@ -491,10 +495,20 @@ static void	npreal_set_termios(struct tty_struct *,struct ktermios *);
 #else
 static void	npreal_set_termios(struct tty_struct *,const struct ktermios *);
 #endif
+#if(LINUX_VERSION_CODE < VERSION_CODE(6,6,0))
 static int	npreal_port_init(struct npreal_struct *,struct ktermios *);
+#else
+static int	npreal_port_init(struct npreal_struct *,const struct ktermios *);
+#endif
+
 static void	npreal_stop(struct tty_struct *);
 static void	npreal_start(struct tty_struct *);
+#if(LINUX_VERSION_CODE < VERSION_CODE(6,1,0))
 static void	npreal_send_xchar(struct tty_struct * tty, char ch);
+#else
+static void	npreal_send_xchar(struct tty_struct * tty, u8 ch);
+#endif
+
 static void	npreal_hangup(struct tty_struct *);
 static inline void npreal_check_modem_status(struct npreal_struct *,int);
 static int	npreal_block_til_ready(struct tty_struct *,struct file *, struct npreal_struct *);
@@ -1143,8 +1157,13 @@ npreal_close(
  * copy data form AP-layer to kernel-layer,
  * and wake up net_read to read data to proc file system. (files in this folder /proc/npreal2)
  */
+#if LINUX_VERSION_CODE < VERSION_CODE(6,6,0)
 static int npreal_write(struct tty_struct * tty,
 		const unsigned char * buf, int count)
+#else
+static ssize_t npreal_write(struct tty_struct * tty,
+		const u8 * buf, size_t count)
+#endif
 {
 	int c, total = 0, ret ;
 	struct npreal_struct *info = (struct npreal_struct *)tty->driver_data;
@@ -1629,11 +1648,17 @@ static void npreal_start(struct tty_struct * tty)
 	npreal_setxon_xoff(info, ASPP_CMD_SETXON);
 }
 
+#if(LINUX_VERSION_CODE < VERSION_CODE(6,1,0))
 static void npreal_send_xchar(struct tty_struct * tty, char ch)
 {
 	// Do nothing
 }
-
+#else
+static void npreal_send_xchar(struct tty_struct * tty, u8 ch)
+{
+	// Do nothing
+}
+#endif
 static void npreal_hangup(struct tty_struct *tty)
 {
 	struct npreal_struct *info = (struct npreal_struct *)tty->driver_data;
@@ -2173,8 +2198,14 @@ static void npreal_shutdown(struct npreal_struct * info)
 /*
  * set npreal serial state
  */
+
+#if(LINUX_VERSION_CODE < VERSION_CODE(6,6,0))
 static int npreal_port_init(struct npreal_struct *info,
 		struct ktermios *old_termios)
+#else
+static int npreal_port_init(struct npreal_struct *info,
+		const struct ktermios *old_termios)
+#endif
 {
 	struct 	ktermios	*termio;
 	int32_t     baud,mode;
@@ -4128,7 +4159,7 @@ npreal_process_notify(
 #if (LINUX_VERSION_CODE < VERSION_CODE(3,9,0))
 		tty_insert_flip_char(tty, 0, TTY_BREAK);
 #else
-		__tty_insert_flip_char(&info->ttyPort, 0, TTY_BREAK);
+		tty_insert_flip_char(&info->ttyPort, 0, TTY_BREAK);
 #endif
 		up (&info->rx_semaphore);
 		info->icount.rx ++;
