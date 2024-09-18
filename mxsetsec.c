@@ -1,9 +1,17 @@
+
+/* Copyright (C) MOXA Inc. All rights reserved.
+
+   This is free software distributed under the terms of the
+   GNU Public License.  See the file COPYING-GPL for details.
+*/
+
 #include "nport.h"
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "misc.h"
 
 #define     ER_ARG  -10
 
@@ -80,10 +88,8 @@ int SetSecure(int index)
             s++;
         }
 
-        if(info[i].secure == 0)
-            printf("  (a)\tEnable all port\n");
-        else
-            printf("  (a)\tDisable all port\n");
+        printf("  (a)\tEnable all port\n");
+        printf("  (b)\tDisable all port\n");
 
 	if (tot > 16)
         {
@@ -113,7 +119,16 @@ int SetSecure(int index)
         }
         else if ((c[0] == 'a') || (c[0] == 'A'))
         {
-            int secure = !info[i].secure;
+            int secure = 1;
+            for(j=0; j<tot; j++)
+            {
+                info[i+j].secure = secure;
+            }
+            change_flag = 1;
+        }
+        else if ((c[0] == 'b') || (c[0] == 'B'))
+        {
+            int secure = 0;
             for(j=0; j<tot; j++)
             {
                 info[i+j].secure = secure;
@@ -167,44 +182,11 @@ int SelectNPort()
     return 0;
 }
 
-//
-// Check system init process
-// return 0: systemd, 1: init
-//
-int isinitproc()
-{
-    int ret;
-    char name[5];
-    FILE *f;
-
-    // check the init process is "init" or "systemd"
-    system("ps --no-headers -o comm 1 > /usr/lib/npreal2/tmp/chk_init_proc 2>&1");
-
-    f = fopen("/usr/lib/npreal2/tmp/chk_init_proc", "r");
-    if (f == NULL) {
-       printf("[1] file open error\n");
-       return 1;
-    }
-
-    fgets(name, 5, f);
-    fclose(f);
-
-    ret = strncmp("init", name, 4);
-    if (ret == 0) {
-        system("rm -f /usr/lib/npreal2/tmp/chk_init_proc > /dev/null 2>&1");
-        return 1;
-    }
-
-    system("rm -f /usr/lib/npreal2/tmp/chk_init_proc > /dev/null 2>&1");
-
-    return 0;
-}
-
 int main(int arg, char *argv[])
 {
-    int i, j, is_init_proc;
+    int i, j;
     int len, daemon, num, ret;
-    char *tmpstr, *tmp, *os;
+    char *tmpstr, *tmp;
     char token[40], tty[10], cout[10], major[20], del[16], sec[10], index[10];
     char data[10], cmd[10], fifo[10], scope[10];
     char token2[40]={0};
@@ -218,7 +200,7 @@ int main(int arg, char *argv[])
     len = 1024;
     tmp = (char *)malloc(20);
   
-    is_init_proc = isinitproc();
+    MK_TEMP();
 
     memset(scope, 0x0, sizeof(scope));
     memset(svrList, 0x0, 256*40);
@@ -234,6 +216,7 @@ int main(int arg, char *argv[])
         printf("file open error\n");
         free(tmpstr);
         free(tmp);
+        RM_TEMP();
         return(0);
     }
 
@@ -305,6 +288,7 @@ int main(int arg, char *argv[])
         printf("No NPort server is installed.\n\n");
         free(tmpstr);
         free(tmp);
+        RM_TEMP();
         return 0;
     }
 
@@ -320,6 +304,7 @@ int main(int arg, char *argv[])
         printf("file open error\n");
         free(tmpstr);
         free(tmp);
+        RM_TEMP();
         return(0);
     }
     ft = fopen ("/usr/lib/npreal2/tmp/nprtmp_cf", "w");
@@ -328,6 +313,7 @@ int main(int arg, char *argv[])
         printf("file open error\n");
         free(tmpstr);
         free(tmp);
+        RM_TEMP();
         return(0);
     }
 
@@ -376,74 +362,15 @@ int main(int arg, char *argv[])
     fclose(ft);
     fclose (f);
 
-    os = "linux";
-    f = fopen ("/etc/redhat-release", "r");
-    if (f != NULL)
-    {
-        fclose(f);
-#if (LINUX_VERSION_CODE == VERSION_CODE(3,10,0))
-        os = "linux_rh";
-#else
-		os = "linux";
-#endif
-    }
-    else
-    {
-        f = fopen ("/etc/SuSE-release", "r");
-        if (f != NULL)
-        {
-            fclose(f);
-            os = "SuSE";
-        }
-        else
-        {
-            f = fopen ("/etc/debian_version", "r");
-            if (f != NULL)
-            {
-                os = "debian";
-            }
-        }
-    }
-
+#ifndef NO_INIT
+#if 0  /* Comment it because I don't know why does original code remove mxloadsvr if config not changed? */
     if (!daemon)
     {
-        if (os == "linux")
-        {
-            if (is_init_proc) {
-                system("grep -v mxloadsvr /etc/rc.d/rc.local > /usr/lib/npreal2/tmp/nprtmp_rclocal");
-                system("cp -f /usr/lib/npreal2/tmp/nprtmp_rclocal /etc/rc.d/rc.local > /dev/null 2>&1");
-            } else {
-                system("grep -v mxloadsvr /usr/lib/npreal2/driver/load_npreal2.sh > /usr/lib/npreal2/tmp/nprtmp_rclocal");
-                system("cp -f /usr/lib/npreal2/tmp/nprtmp_rclocal /usr/lib/npreal2/driver/load_npreal2.sh > /dev/null 2>&1");
-            }
-
-            system("rm -f /usr/lib/npreal2/tmp/nprtmp_rclocal");
-            
-        }
-        else if (os == "linux_rh")
-        {
-            system("grep -v mxloadsvr /etc/init.d/npreals > /usr/lib/npreal2/tmp/nprtmp_rclocal");
-            system("cp -f /usr/lib/npreal2/tmp/nprtmp_rclocal /etc/init.d/npreals > /dev/null 2>&1");
-            system("rm -f /usr/lib/npreal2/tmp/nprtmp_rclocal");
-            system("chkconfig --del /etc/init.d/npreals > /dev/null 2>&1");
-
-        }
-        else if (os == "debian")
-        {
-            system("grep -v mxloadsvr /etc/init.d/npreals > /usr/lib/npreal2/tmp/nprtmp_rclocal");
-            system("cp -f /usr/lib/npreal2/tmp/nprtmp_rclocal /etc/init.d/npreals > /dev/null 2>&1");
-            system("rm -f /usr/lib/npreal2/tmp/nprtmp_rclocal");
-            system("update-rc.d npreals defaults 90");
-
-        }
-        else if (os == "SuSE")
-        {
-            system("grep -v mxloadsvr /etc/rc.d/boot.local > /usr/lib/npreal2/tmp/nprtmp_rclocal");
-            system("cp -f /usr/lib/npreal2/tmp/nprtmp_rclocal /etc/rc.d/boot.local > /dev/null 2>&1");
-            system("rm -f /usr/lib/npreal2/tmp/nprtmp_rclocal");
-
-        }
+		system("rm -f /usr/lib/npreal2/driver/state.start > /dev/null 2>&1");
+		//system("systemctl disable npreal2 > /dev/null 2>&1");
     }
+#endif
+#endif /* ifndef NO_INIT */
 
     sprintf(tmpstr, "cp -f /usr/lib/npreal2/tmp/nprtmp_cf %s/npreal2d.cf", DRIVERPATH);
     system(tmpstr);
@@ -451,29 +378,11 @@ int main(int arg, char *argv[])
 
     sprintf(tmpstr, "%s/mxloadsvr", DRIVERPATH);
     system(tmpstr);
-    if (os == "linux")
-    {   
-        if (is_init_proc) {
-            system("chmod +x /etc/rc.d/rc.local");
-        } else {
-            system("chmod +x /usr/lib/npreal2/driver/load_npreal2.sh");
-        }
-    }
-    else if (os == "linux_rh")
-    {
-        system("chmod +x /etc/init.d/npreals");
-    }
-    else if (os == "debian")
-    {
-        system("chmod +x /etc/init.d/npreals");
-    }
-    else if (os == "SuSE")
-    {
-        system("chmod +x /etc/rc.d/boot.local");
-    }
 
     free(tmpstr);
     free(tmp);
+
+    RM_TEMP();
     return 0;
 }
 

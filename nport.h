@@ -1,3 +1,10 @@
+
+/* Copyright (C) MOXA Inc. All rights reserved.
+
+   This is free software distributed under the terms of the
+   GNU Public License.  See the file COPYING-GPL for details.
+*/
+
 #include    <stdio.h>
 #include    <string.h>
 #include    <fcntl.h>
@@ -14,10 +21,12 @@
 #define     SEARCH_RETRY_CNT                30
 #define     MAX_DEVICE_NUM        10
 
-#define     TEMPDIR     "/tmp/moxa"
+#define     TEMPDIR     "/usr/lib/npreal2/tmp"
 #define     NPPATH      "/usr/lib/npreal2"
 #define     DRIVERPATH  "/usr/lib/npreal2/driver"
 
+#define		MK_TEMP()		system("mkdir /usr/lib/npreal2/tmp > /dev/null 2>&1");
+#define		RM_TEMP()		{system("rm -rf /usr/lib/npreal2/tmp/* > /dev/null 2>&1"); system("rmdir /usr/lib/npreal2/tmp > /dev/null 2>&1");}
 
 #define		NP5210          0x0322
 #define		NP5230          0x0312
@@ -32,5 +41,4 @@
 #else
 #define DBG_PRINT       if (0) printf
 #endif
-
 

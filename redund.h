@@ -1,4 +1,10 @@
 
+/* Copyright (C) MOXA Inc. All rights reserved.
+
+   This is free software distributed under the terms of the
+   GNU Public License.  See the file COPYING-GPL for details.
+*/
+
 #ifndef _REDUND_H
 #define _REDUND_H
 

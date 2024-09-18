@@ -1,9 +1,17 @@
+
+/* Copyright (C) MOXA Inc. All rights reserved.
+
+   This is free software distributed under the terms of the
+   GNU Public License.  See the file COPYING-GPL for details.
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <sys/stat.h>
 #include <arpa/inet.h>
 #include <string.h>
+#include <unistd.h>
 #include "misc.h"
 #include "npreal2d.h"
 
@@ -136,6 +144,13 @@ int	ipv4_str_to_ip(char *str, ulong *ip)
 	return NP_RET_SUCCESS;
 }
 
+unsigned long filelength(int f)
+{
+    unsigned long sz = lseek(f,0,SEEK_END);
+    lseek(f,0,SEEK_SET);
+    return sz;
+}
+
 int	ipv6_str_to_ip(char *str, unsigned char *ip)
 {
 	int	i;
@@ -159,3 +174,32 @@ int	ipv6_str_to_ip(char *str, unsigned char *ip)
 
 	return NP_RET_SUCCESS;
 }
+
+//
+// Check whether ps accept parameters or not
+// return 1: yes, 0: no
+//
+int check_ps_param()
+{
+    int  ret;
+    char name[5];
+    FILE *f;
+
+    // check the init process is "init" or "systemd"
+    system("ps -ef > /usr/lib/npreal2/tmp/chk_init_proc 2>&1 ; echo $? > /usr/lib/npreal2/tmp/errno 2>&1");
+    system("grep -v \"0\" /usr/lib/npreal2/tmp/errno > /usr/lib/npreal2/tmp/ps_stop 2>&1");
+
+	// In Yocto project, the Easy Box ps has no any parameter. We also don't do the auto bootup start for user.
+    f = fopen("/usr/lib/npreal2/tmp/ps_stop", "r");
+    if (f != NULL ) {
+		if (filelength(fileno(f)) != 0){
+			fclose(f);
+			return 0;
+		}
+        fclose(f);
+    }
+
+    return 1;
+}
+
+

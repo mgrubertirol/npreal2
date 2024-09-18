@@ -1,3 +1,10 @@
+
+/* Copyright (C) MOXA Inc. All rights reserved.
+
+   This is free software distributed under the terms of the
+   GNU Public License.  See the file COPYING-GPL for details.
+*/
+
 #include "nport.h"
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -7,6 +14,7 @@
 #include <linux/version.h>
 #include <stdio.h>
 #include <ctype.h>
+#include "misc.h"
 
 #define     ER_ARG      -10
 #define		REALCOM_MODE 0
@@ -17,12 +25,9 @@
 
 #define TMP_STR_LEN 256
 
-unsigned long filelength(int f)
-{
-    unsigned long sz = lseek(f,0,SEEK_END);
-    lseek(f,0,SEEK_SET);
-    return sz;
-}
+#ifndef TTYNAME
+#define TTYNAME "ttyr"
+#endif
 
 int minor[256];
 char *tmptty, *tmpcout;
@@ -133,11 +138,11 @@ void getTty(char *ret)
 		{
 			c_hex(i, x1);
 			c_hex(j, x2);
-			sprintf(ret, "ttyr%s%s", x1, x2);
+			sprintf(ret, "%s%s%s", TTYNAME, x1, x2);
 			if (strstr(tmptty, ret) == NULL)
 			{
 				// Reserve the spare ttyrXX for this device.
-				sprintf(tmptty, "%s[%s]", tmptty, ret);
+				sprintf(tmptty + strlen(tmptty), "[%s]", ret);
 				free (x1);
 				free (x2);
 				return;
@@ -168,7 +173,7 @@ void getCout(char *ret)
 			if (strstr(tmpcout, ret) == NULL)
 			{
 				// Reserve the spare curXX for this device.
-				sprintf(tmpcout, "%s[%s]", tmpcout, ret);
+				sprintf(tmpcout + strlen(tmpcout), "[%s]", ret);
 				free (x1);
 				free (x2);
 				return;
@@ -195,7 +200,7 @@ int check_usage(int arg, char *argv[], int mode)
 {
 	int i;
 	char buf[10];
-	int scope_id;
+	int scope_id = 0;
 	int ret;
 
 	ret = 0;
@@ -288,40 +293,6 @@ int check_usage(int arg, char *argv[], int mode)
 	return ret;
 }
 
-//
-// Check system init process
-// return 0: systemd, 1: init
-//
-int isinitproc()
-{
-    int  ret;
-    char name[5];
-    FILE *f;
-
-    // check the init process is "init" or "systemd"
-    system("ps --no-headers -o comm 1 > /usr/lib/npreal2/tmp/chk_init_proc 2>&1");
-
-    f = fopen("/usr/lib/npreal2/tmp/chk_init_proc", "r");
-    if (f == NULL) {
-        printf("[1] file open error\n");
-        return 1;
-    }
-
-    fgets(name, 5, f);
-
-    fclose(f);
-
-    ret = strncmp("init", name, 4);
-    if (ret == 0) {
-        system("rm -f /usr/lib/npreal2/tmp/chk_init_proc > /dev/null 2>&1");
-        return 1;
-    }
-
-    system("rm -f /usr/lib/npreal2/tmp/chk_init_proc > /dev/null 2>&1");
-
-    return 0;
-}
-
 int main(int arg, char *argv[])
 {
 	const int ABORT_SETTING = -2;
@@ -339,9 +310,8 @@ int main(int arg, char *argv[])
 	struct in_addr addr;
 	unsigned long ipaddr;
 	FILE *f, *ft, *frc, *fos;
-	char *os = "linux";
 	int mode, tmp_i = 0, ret;
-    int is_init_proc;
+	int is_ps_valid = 1;
 
 	mode = REALCOM_MODE;
 	overwrite = NORMAL_SETTING;
@@ -364,13 +334,16 @@ int main(int arg, char *argv[])
 	if (ret < 0)
 		return 0;
 
-    is_init_proc = isinitproc();
+	MK_TEMP();
 
+    is_ps_valid = check_ps_param();
+	
 	printf("\nAdding Server...\n\n");
 
 	memset(ip, '\0', 40);
 	if(strlen(argv[1]) > 39){
 		printf("The server name length over 39!\n\n");
+		RM_TEMP();
 		return -1;
 	}
 
@@ -392,6 +365,7 @@ int main(int arg, char *argv[])
 		if (strcmp(ip, "255.255.255.255") == 0)
 		{
 			printf("Invalid IP Address!\n\n");
+			RM_TEMP();
 			return -1;
 		}
 		/*	
@@ -412,6 +386,7 @@ int main(int arg, char *argv[])
 
 		if (strcmp(ip, "255.255.255.255") == 0) {
 			printf("Invalid IP Address!\n\n");
+			RM_TEMP();
 			return -1;
 		}
 
@@ -419,6 +394,7 @@ int main(int arg, char *argv[])
 
 		if (strcmp(Gredundant_ip, "255.255.255.255") == 0) {
 			printf("Invalid IP Address!\n\n");
+			RM_TEMP();
 			return -1;
 		}
 		break;
@@ -434,45 +410,6 @@ int main(int arg, char *argv[])
 	memset(minor, -1, sizeof(int)*256);
 	idx = 0;
 
-	/* get OS */
-	fos = fopen ("/etc/redhat-release", "r");
-	if (fos != NULL)
-	{
-		fclose(fos);
-#if (LINUX_VERSION_CODE == VERSION_CODE(3,10,0))
-		os = "linux_rh";
-#else
-		os = "linux";
-#endif
-	}
-	else
-	{
-		fos = fopen ("/etc/SuSE-release", "r");
-		if (fos != NULL)
-		{
-			fclose(fos);
-			os = "SuSE";
-		}
-		else
-		{
-			fos = fopen ("/etc/debian_version", "r");
-			if (fos != NULL)
-			{
-				fclose(fos);
-				os = "debian";
-			}
-			else
-			{
-				fos = fopen ("/etc/gentoo-release", "r");
-				if (fos != NULL)
-				{
-					fclose(fos);
-					os = "gentoo";
-				}
-			}
-		}
-	}
-
 	sprintf(tmpstr, "%s/npreal2d.cf", DRIVERPATH);
 	f = fopen (tmpstr, "r");
 	if (f == NULL)
@@ -483,6 +420,7 @@ int main(int arg, char *argv[])
 		free(tmp2);
 		free(tmptty);
 		free(tmpcout);
+		RM_TEMP();
 		return(0);
 	}
 	ft = fopen ("/usr/lib/npreal2/tmp/npr_tmpfile2", "w");
@@ -494,6 +432,7 @@ int main(int arg, char *argv[])
 		free(tmp2);
 		free(tmptty);
 		free(tmpcout);
+		RM_TEMP();
 		return(0);
 	}
 
@@ -576,8 +515,8 @@ int main(int arg, char *argv[])
 		// [ttyr00][ttyr01]...
 		// [cur00][cur01]...
 		// minor[Minor#-1] = Minor#
-		sprintf(tmptty, "%s[%s]", tmptty, tmpt);
-		sprintf(tmpcout, "%s[%s]", tmpcout, tmpc);
+		sprintf(tmptty + strlen(tmptty), "[%s]", tmpt);
+		sprintf(tmpcout + strlen(tmpcout), "[%s]", tmpc);
 		minor[idx] = atoi(tmpm);
 		idx++;
 	} /* end of parse npreal2d.cf */
@@ -603,6 +542,7 @@ int main(int arg, char *argv[])
 				if (!isdigit(buf[i]))
 				{
 					printf("\nArgument error: [data port] is not a digital number.\n\n");
+					RM_TEMP();
 					return ER_ARG;
 				}
 			}
@@ -615,6 +555,7 @@ int main(int arg, char *argv[])
 				if (!isdigit(buf[i]))
 				{
 					printf("\nArgument error: [command port] is not a digital number.\n\n");
+					RM_TEMP();
 					return ER_ARG;
 				}
 			}
@@ -634,6 +575,7 @@ int main(int arg, char *argv[])
 		free(tmp2);
 		free(tmptty);
 		free(tmpcout);
+		RM_TEMP();
 		return 0;
 	}
 
@@ -645,6 +587,7 @@ int main(int arg, char *argv[])
 		free(tmp2);
 		free(tmptty);
 		free(tmpcout);
+		RM_TEMP();
 		return 0;
 	}
 
@@ -707,8 +650,11 @@ int main(int arg, char *argv[])
 		/* check if daemon is running or not */
 		do{
 			memset(tmpstr, '\0', TMP_STR_LEN);
-			sprintf(tmpstr, "ps -ef | grep npreal2d | grep -v grep");
-			sprintf(tmpstr, "%s > /usr/lib/npreal2/tmp/nprtmp_checkdaemon", tmpstr);
+			if( is_ps_valid )
+				sprintf(tmpstr, "ps -ef | grep npreal2d | grep -v grep");
+			else
+				sprintf(tmpstr, "ps | grep npreal2d | grep -v grep");
+			sprintf(tmpstr + strlen(tmpstr), " > /usr/lib/npreal2/tmp/nprtmp_checkdaemon");
 			system(tmpstr);
 
 			f = fopen ("/usr/lib/npreal2/tmp/nprtmp_checkdaemon", "r");
@@ -733,7 +679,10 @@ int main(int arg, char *argv[])
 
 		if( daemon_flag ){
 		    memset(tmpstr, '\0', TMP_STR_LEN);
-		    sprintf(tmpstr, "ps -ef | grep npreal2d | grep -v npreal2d_redund | awk '$0 !~ /grep/ {system(\"kill -USR1 \"$2)}'");
+			if( is_ps_valid )
+				sprintf(tmpstr, "ps -ef | grep npreal2d | grep -v npreal2d_redund | awk '$0 !~ /grep/ {system(\"kill -USR1 \"$2)}'");
+			else
+				sprintf(tmpstr, "ps | grep npreal2d | grep -v npreal2d_redund | awk '$0 !~ /grep/ {system(\"kill -USR1 \"$1)}'");
 		    system(tmpstr);
 
 		    //ps -ef | grep npreal2d | grep -v npreal2d_redund | awk '$0 !~ /grep/ {system("kill -USR1 "$2)}'
@@ -741,6 +690,10 @@ int main(int arg, char *argv[])
 		} else {
 			sprintf(tmpstr, "%s/mxloadsvr", DRIVERPATH);
 			system(tmpstr);
+			//if (!is_init_proc) {
+			//	system("systemctl start npreal2");
+			//	system("systemctl start npreal2");
+			//}	
 		}
 
 	}else if (mode == REDUNDANT_MODE){
@@ -749,29 +702,12 @@ int main(int arg, char *argv[])
 		system(tmpstr);
 	}
 
-	if (os == "linux")
-	{
-        if( is_init_proc )
-            system("chmod +x /etc/rc.d/rc.local");
-	}
-	else if (os == "linux_rh")
-	{
-		system("chmod +x /etc/init.d/npreals");
-	}
-	else if (os == "debian")
-	{
-		system("chmod +x /etc/init.d/npreals");
-	}
-	else if (os == "SuSE")
-	{
-		system("chmod +x /etc/rc.d/boot.local");
-	}
-
 	free(tmpstr);
 	free(tmp1);
 	free(tmp2);
 	free(tmptty);
 	free(tmpcout);
+	RM_TEMP();
 	return 0;
 }
 

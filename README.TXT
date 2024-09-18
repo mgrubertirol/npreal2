@@ -3,7 +3,7 @@
 
                               README file
 
-  Date: 10-18-2019
+  Date: 02-24-2023
   Copyright (C) 2004, MOXA Inc. All rights reserved.
 ========================================================================
 Content
@@ -22,9 +22,11 @@ Content
 12. Modification of "npreal2d.cf"
 13. Modification of Initializing Script
 14. Enable background polling feature
-15. Troubleshooting
-16. Limitation
-17. Technical Support
+15. How to sign the driver with a cypher key to support a platform which enables the secure boot
+16. Specify the network timeout
+17. Troubleshooting
+18. Limitation
+19. Technical Support
 ------------------------------------------------------------------------
 1. Introduction
     The purpose of this driver is to map NPort serial port to host tty
@@ -41,13 +43,15 @@ Content
     This driver can run under following systems.
     a. Primary Linux distribution (kernel 5.0 or later)
        (Support IPV4 and IPV6)
-    
+
     Following distributions are tested when releasing.
-	a. Arch(5.2.11)
-	b. VM-Ubuntu 19.04 x64 (5.0.0)
-	c. Ubuntu 19.04 x64 (5.0.0)
-	d. Ubuntu 19.10 x64 (5.3.0)
-	e. Fedora 30 x64 (5.0.9)
+    a. Arch(5.2.11)
+    b. VM-Ubuntu 19.04 x64 (5.0.0)
+    c. Ubuntu 19.04 x64 (5.0.0)
+    d. Ubuntu 19.10 x64 (5.3.0)
+    e. Fedora 30 x64 (5.0.9)
+
+    For ARM platform supporting, please read ARM_PORTING_GUIDE.TXT.
 
 3. System Requirement
     To install this driver, you will need NPort Server and one of the
@@ -63,21 +67,12 @@ Content
      -  gawk-3.1.1.9 or above
      -  openssl-1.0.0 or above (For Secure Real COM Mode only)
      -  libssl-dev-1.0.0 or above (For Secure Real COM Mode only)
-     
+
     Additional requirements for Raspbian
      -  gcc-4.8.3 or above 
      -  ncurses-devel-5.9 or above
      -  rpi-source, read the instruction from it's website.
         (https://github.com/notro/rpi-source/wiki)
-
-    Note:
-     - rpi-source is a 3rd party package offering integrated kernel resouce
-       for building driver. Real TTY are tested with this package and working
-       well. However the requirements may be various for different Raspbian
-       version. Please read the manual of Raspbian and rpi-source to
-       understand the knowhow and limitation.
-     - Real TTY driver with Raspbian Jessie(4.4.50) and Buster(4.19) are
-       tested on Pi 2/3.
 
 4. Procedure
     To map NPort serial port to host tty port, you need to:
@@ -96,7 +91,7 @@ Content
     Before proceeding with the software installation, make sure you 
     have completed the hardware installation, as described in an 
     earlier chapter of this manual. 
-    
+
     The default IP address for NPort Server is 192.168.127.254.
 
     For NPort Wireless series, the default IP address of the Ethernet
@@ -111,27 +106,25 @@ Content
     !!!!!!!!!!!!!!!!!!!!!!!!!!!! NOTE !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 6. Installing the Driver File
-    a. Copy the driver file from website, under the product page.
+    a. Copy the driver file from the website, under the product page.
     b. Log in to the console as a super user (root).
     c. Execute "cd " to change to the home directory.
     d. Copy the driver file npreal2xx.tgz to the home directory.
     e. Execute "tar xvfz npreal2xx.tgz" to copy all files into the system.
-    f. Execute "./moxa/mxinst" for Linux kernel 3.x or 4.x.
-	
-    !!!!!!!!!!!!!!!!!!!!!!!!!!!! NOTE 1!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	  For Red Hat AS/ES/WS and Fedora Core1, extra argument is 
-	  needed: # /tmp/moxa/mxinst SP1 
-    !!!!!!!!!!!!!!!!!!!!!!!!!!!! NOTE 1!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    
-    !!!!!!!!!!!!!!!!!!!!!!!!!!!! NOTE 2!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	  If you use driver in 64-bits environment, you may use extra 
-	  argument m64, SP1_m64 or mppc64.(the SP1_m64 is for Red Hat 
-	  AS/ES/WS and Fedora Core1 64-bits environment; The mppc64
-          is for PowerPC64 only.) Ex.
-	  # /tmp/moxa/mxinst m64
-    !!!!!!!!!!!!!!!!!!!!!!!!!!!! NOTE 2!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    f. Change to the moxa directory.
 
-    g. The shell script will install the driver files automatically.
+       # cd moxa
+
+    g. Execute "./mxinst"
+
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!! NOTE !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      If you use driver in 64-bits environment, you may use extra 
+      argument SP1_m64 or mppc64.(the SP1_m64 is for Red Hat
+      AS/ES/WS; The mppc64 is for PowerPC64 only.)
+      Ex. # ./mxinst SP1_m64 
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!! NOTE !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    h. The shell script will install the driver files automatically.
 
     After installing the driver, you will be able to see several 
     files in the "/usr/lib/npreal2/driver" folder, including:
@@ -148,9 +141,9 @@ Content
 
 7. Mapping TTY Ports
     7.1 Real COM Mode
-	  Before mapping tty ports, you must set the operation mode of your 
+      Before mapping tty ports, you must set the operation mode of your 
       NPort to Real COM Mode. We provide two ways to map tty ports.
-   
+
     a. Mapping tty ports automatically
       After logging in as a super user, enter the directory 
       "/usr/lib/npreal2/driver" and then execute "mxaddsvr" to map the 
@@ -170,38 +163,38 @@ Content
       In Example 1, 16 tty ports will be added, all with IP 192.168.3.4, 
       but with data ports equal to (950, 951, ..., 965), and command ports 
       equal to (966, 967, 968, ..., 981). 
-      
+
       In Example 2, 16 tty ports will be added, all with IP 192.168.3.4, 
       but with data ports equal to (4001, 4002, ..., 4016), and command 
       ports equal to (966, 967, 968, ..., 981). 
-      
+
     b. Mapping tty ports manually
       After entering the directory "/usr/lib/npreal2/driver", you can modify 
       "npreal2d.cf" to map NPort serial ports to tty ports, and then execute 
       "mxloadsvr" to activate the modifications.
-      
+
       The following tasks will be performed:
-     
+
        - Modify npreal2d.cf
        - Create tty ports in the directory "/dev" with major & minor number 
          configured in "npreal2d.cf"
        - Stop and then restart the driver.
 
-	7.2 Redundant COM Mode
-	  Before mapping tty ports, you must set the operation mode of your 
+    7.2 Redundant COM Mode
+      Before mapping tty ports, you must set the operation mode of your 
       NPORT to Redundant COM Mode and make sure your device is CN2600 
-      series. 
-	  We provide a new command to map tty ports to be Redundant COM Mode.
+      series.
+      We provide a new command to map tty ports to be Redundant COM Mode.
 
     a. Mapping tty ports
       mxaddsvr -r [NPort IP1 Address] [NPort IP2 Address] [Total Ports]
 
-	  Example :
-		# cd /usr/lib/npreal2/driver
-	    # ./mxaddsvr -r 192.168.32.134 192.168.126.123 16
-		
-	  In Example, 16 tty ports will be added, all with 
-	  IP1 192.168.32.134 and IP2 192.168.32.126, but with data ports 
+      Example :
+        # cd /usr/lib/npreal2/driver
+        # ./mxaddsvr -r 192.168.32.134 192.168.126.123 16
+
+      In Example, 16 tty ports will be added, all with 
+      IP1 192.168.32.134 and IP2 192.168.32.126, but with data ports 
           equal to (950, 951, ..., 965), and command ports 
           equal to (966, 967, 968, ..., 981).
 
@@ -218,16 +211,16 @@ Content
 
    b. Enable or disable the secure mode
      A script mxsetsec is used to set secure mode enable/disable.
-	
+
      !!!!!!!!!!!!!!!!!!!!!!!!!!!! NOTE !!!!!!!!!!!!!!!!!!!!!!!!!!!!
      This function is support NPort 6000 series only.
      If your model is not NPort 6000 series, you could ignore this chapter.
      !!!!!!!!!!!!!!!!!!!!!!!!!!!! NOTE !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	
+
      The syntax of "mxsetsec" is:
-    
+
      mxsetsec
-    
+
      Example:
        # cd /usr/lib/npreal2/driver
        # ./mxsetsec
@@ -235,7 +228,7 @@ Content
 9. Remove Mapped TTY Ports
     As with the "8. Mapping TTY Ports" task, we provide two ways to remove
     mapped tty ports:
-   
+
     a. Remove the mapped tty ports automatically
       After logging in as root, enter the directory "/usr/lib/npreal2/driver" 
       and then execute "mxdelsvr" to delete a server. 
@@ -243,28 +236,28 @@ Content
 
       mxdelsvr [IP]  ; For Real COM mode.
       mxdelsvr [IP1] ; For Redundant COM mode.
-      
+
       Example:
        # cd /usr/lib/npreal2/driver
        # ./mxdelsvr 192.168.3.4
-           
+
       If you don't include the IP address in the command line, a numbered 
       list of IP addresses for servers currently installed, along with the 
       total number of ports for each server, will be listed on the screen.
       To remove the tty ports for a particular server, type the number next 
       to the server's IP address and then hit Enter. The following tasks 
       will be performed:
-    
+
        - Modify the npreal2d.cf 
        - Remove the relevant tty ports in directory "/dev"
        - Stop and then restart the driver.  
-      
+
     b. Remove the mapped tty ports manually
       After entering the directory "/usr/lib/npreal2/driver", you can 
       modify "npreal2d.cf" to delete servers and ports manually, and then 
       execute "mxloadsvr" to activate the modifications.
 
-	  
+
 10. TTY Naming Rule
      The tty name of the Real TTY driver is configured in npreal2d.cf. 
      The pre-defined tty name is ttyrXX, and the callout name is curXX. 
@@ -278,20 +271,20 @@ Content
      ...(etc.)
 
      !!!!!!!!!!!!!!!!!!!!!!!!!!!! NOTE !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	   1. Callout Device is obsolete in Linux 2.6. That is, you 
-	      cannot open Callout Device on Linux 2.6.
-	   2. ttyr0 - ttyr9 or some tty names represented by decimal
-	      number are created for kernel compatibility reason. User
-	      must use tty port name combine with hexadecimal digits
-	      for correct operation.   
+       1. Callout Device is obsolete in Linux 2.6. That is, you 
+          cannot open Callout Device on Linux 2.6.
+       2. ttyr0 - ttyr9 or some tty names represented by decimal
+          number are created for kernel compatibility reason. User
+          must use tty port name combine with hexadecimal digits
+          for correct operation.   
      !!!!!!!!!!!!!!!!!!!!!!!!!!!! NOTE !!!!!!!!!!!!!!!!!!!!!!!!!!!!
- 
+
 11. Removing the Driver
      Removing the driver will remove all driver files, mapped tty ports, 
      and unload the driver. To do this, enter the directory 
      "/usr/lib/npreal2/driver", and then execute "mxuninst" to uninstall 
      the driver. This program will perform the following tasks:
-    
+
       - Unload the driver.
       - Delete all files and directories in "/usr/lib/npreal2"
       - Delete directory "/usr/lib/npreal2"
@@ -366,13 +359,13 @@ Content
        the symbolic link to the script so that if the system boots
        up next time, the system will perform the relevant actions
        which are described in the script.
-	   
+
            Caution:
              If the Debian system boots without nport driver loaded, please
              execute following command with root administration to resolve this
              problem:
-	   
-	       # update-rc.d npreals defaults
+
+               # update-rc.d npreals defaults
 
              Starting with Debian 6.0, the insserv command is used instead as
              below instruction.
@@ -390,10 +383,10 @@ Content
        Real TTY driver in the script file.
 
 14. Enable background polling feature
-	If you don't want your program been blocked when open tty port with NPort
+    If you don't want your program been blocked when open tty port with NPort
     not exist, you should enable this feature. This feature will polling NPort
     device in background to eliminate the time your program been blocked.
-       
+
     Following steps shows how to enable this feature
 
     a. Copy the driver file from website, under the product page.
@@ -402,8 +395,112 @@ Content
     d. Copy the driver file npreal2xx.tgz to the home directory.
     e. Execute "tar xvfz npreal2xx.tgz" to copy all files into the system.
     f. Execute "./moxa/mxinst polling".
-	
-15. Troubleshooting
+
+15. How to sign the driver with a cypher key to support a platform that enables a secure 
+    boot
+
+    When your company or you have a platform with the secure boot function enabled, you 
+    may consider to install a driver with a signed cypher. There are two approaches for 
+    key generation and you will need to sign the driver to install it to the platform:
+    1. To apply a public/private key generated by a third-party certificate authority, or
+    2. To apply a public/private key generated by your company’s internal server.
+    Approach 2 is a less costly and secure way if you use the pair of keys internally 
+    (within the company). If you will use the key on the Internet, Moxa recommends the 
+    Approach 1.
+
+    The following steps are the guidance of signing the driver:
+
+    1. Create a configuration file for generating the key pair
+    2. Enrolling the public key
+    3. Signing the module
+    4. Loading the signed module
+
+    1. Create a configuration file for generating the key pair
+       
+    x509.genkey
+    [ req ]
+    default_bits = 4096
+    distinguished_name = req_distinguished_name
+    prompt = no
+    string_mask = utf8only
+    x509_extensions = myexts
+
+    [ req_distinguished_name ]
+    #O = Unspecified company
+    CN = Build time autogenerated kernel key
+    #emailAddress = unspecified.user@unspecified.company
+
+    [ myexts ]
+    basicConstraints=critical,CA:FALSE
+    keyUsage=digitalSignature
+    subjectKeyIdentifier=hash
+    authorityKeyIdentifier=keyid
+    
+    • Use the following command to generate an X.509 key pair.
+    # openssl req -x509 -new -nodes -utf8 -sha256 -days 36500 -batch -config x509.genkey 
+    -outform DER -out my_signing_key_pub.der -keyout my_signing_key.priv
+
+    The keypair will be stored as my_signing_key_pub.der and my_signing_key.priv.
+    my_signing_key_pub.der is the public key file.
+    my_signing_key.priv is the private key file.
+    The two files will be used when signing the module.
+
+    2. Enrolling the public key
+    • Use the following command to enroll the public key
+    # mokutil --import my_signing_key_pub.key
+    You will be asked to enter a password that will be used in MokManager later.
+    
+    • Reboot the machine
+    When the system reboot, the MokManager will be loaded.
+    
+    • Choose “Eroll MOK”
+    MokManager will ask you enter the password you typed in earlier when running mokutil.
+
+    3. Signing the module
+    Using the following command to sign the module.
+    # /usr/src/linux-headers-$(uname -r)/scripts/sign-file sha256 my_signing_key.priv 
+    my_signing_key_pub.der my_module.ko
+
+    You can validate that the module is signed by checking that it includes the string 
+    “~Module signature appended~” by the following command.
+
+    # hexdump -Cv my_module.ko | tail -n 5
+    00010c30  f8 61 31 0e 53 39 2c 8b  91 b2 98 63 d1 dc 00 00  |.a1.S9,....c....|
+    00010c40  02 00 00 00 00 00 00 00  02 9e 7e 4d 6f 64 75 6c  |..........~Modul|
+    00010c50  65 20 73 69 67 6e 61 74  75 72 65 20 61 70 70 65  |e signature appe|
+    00010c60  6e 64 65 64 7e 0a                                 |nded~.|
+    00010c66
+
+    4. Loading the signed module
+    • Copy module to kernel
+    After signing the module, you can copy the module to the kernel module directory that 
+    you want.
+    For example:
+    # cp my_module.ko /lib/modules/$(uname -r)/kernel/driver/char/
+    • Update the modular dependency list
+    # depmod -a
+    • Load the kernel module
+    # modprobe my_module
+
+16. Specify the network timeout
+    When driver communicate to the NPort, there is the chance that the NPort
+    is not reachable on network. In this circumstance, you can specify the
+    timeout value in second that driver report as a error. The default value
+    is 10 seconds.
+
+    Setting the smaller timeout value, user's application will get quick
+    response when network is lost. Setting the greater value to avoid the
+    application get disconnect error in a busy network.
+
+    Note the timeout is used for internal command. The actual waiting time
+    may be various depends on the number of commands in a request.
+
+    Following example shows how to specify the timeout as 2 seconds when
+    installing the driver.
+
+    # ./moxa/mxinst cmd_timeout 2
+
+17. Troubleshooting
     1. Open multiple tty concurrently in secure mdoe
        Since openssl cause internal system call error when opening multiple
        tty concurrently, the opening might be failed. If application requires
@@ -411,15 +508,21 @@ Content
        parameter. E.g. "./moxa/mxinst concurrent_open"
        Driver will take longer time to detecte network disconnection with this
        setting.
+    2. TTY names are conflict to udev rule
+       Legacy Real TTY driver generates redundant ttys name ttyr0~ttyr9. These
+       ttys are not tested and violate the naming rules of Real TTY driver.
+       They are removed automatically by an udev rule in later versions. For
+       the customers intended to use these TTY name, they may install the
+       driver with 'no_udev_rule.' E.g. "./moxa/mxinst no_udev_rule"
 
-16. Limitation
+18. Limitation
     1. Redundant COM Mode
        NPort driver needs ONE minute the most to synchronize with NPort device
        after the LAN port resumes connection.
        Therefore, during the maximum one minute synchronization if any one
        network connection loses again, data lose might happen. 
 
-17. Technical Support
+19. Technical Support
      If you have any technical questions, please send your question by
      the following ways with detail description of the symptom.
 

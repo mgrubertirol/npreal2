@@ -1,28 +1,10 @@
 
-/*
- *          npreal2.c  -- MOXA NPort Server family Real TTY driver.
- *
- *      Copyright (C) 1999  Moxa Inc. (support@moxa.com.tw).
- *
- *      This code is loosely based on the Linux serial driver, written by
- *      Linus Torvalds, Theodore T'so and others.
- *
- *      This program is free software; you can redistribute it and/or modify
- *      it under the terms of the GNU General Public License as published by
- *      the Free Software Foundation; either version 2 of the License, or
- *      (at your option) any later version.
- *
- *      This program is distributed in the hope that it will be useful,
- *      but WITHOUT ANY WARRANTY; without even the implied warranty of
- *      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *      GNU General Public License for more details.
- *
- *      You should have received a copy of the GNU General Public License
- *      along with this program; if not, write to the Free Software
- *      Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- *
- *
- */
+/* Copyright (C) MOXA Inc. All rights reserved.
+
+   This is free software distributed under the terms of the
+   GNU Public License.  See the file COPYING-GPL for details.
+*/
+
 #ifdef 		MODVERSIONS
 #ifndef 	MODULE
 #define 	MODULE
@@ -51,6 +33,7 @@
 #include <linux/tty_flip.h>
 #include <linux/serial.h>
 #include <linux/serial_reg.h>
+#include <linux/serial_core.h>
 #include <linux/major.h>
 #include <linux/string.h>
 #include <linux/fcntl.h>
@@ -89,11 +72,99 @@
 
 #include "np_ver.h"
 
-#if (LINUX_VERSION_CODE < VERSION_CODE(5,0,0))
-#define ACCESS_OK(x,y,z) access_ok(x,y,z)
-#else
-#define ACCESS_OK(x,y,z) access_ok(y,z)
+//========== kernel dependant code =========
+#ifndef OS_TYPE
+#define OS_TYPE 0
 #endif
+
+#define DEBIAN_ID	1
+#define UBUNTU_ID	2
+#define CENTOS_ID	3
+#define KYLIN_ID	4
+#define FEDORA_ID	5
+#define ROCKY_ID	6
+#define REDHAT_ID	7
+
+#if (LINUX_VERSION_CODE < VERSION_CODE(5,0,0))
+  #define ACCESS_OK(x,y,z) access_ok(x,y,z)
+#else
+ #define ACCESS_OK(x,y,z) access_ok(y,z)
+#endif
+
+#if (LINUX_VERSION_CODE < VERSION_CODE(4,7,0))
+#define IS_TTY_INIT(p) ((p)->flags & ASYNC_INITIALIZED)
+#define TTY_SET_INIT(p) ((p)->flags |= ASYNC_INITIALIZED)
+#define TTY_CLR_INIT(p) ((p)->flags &= ~(ASYNC_INITIALIZED))
+#define IS_TTY_ACTIVE(p) ((p)->flags & ASYNC_NORMAL_ACTIVE)
+#define TTY_SET_ACTIVE(p) ((p)->flags |= ASYNC_NORMAL_ACTIVE)
+#define TTY_CLR_ACTIVE(p) ((p)->flags &= ~(ASYNC_NORMAL_ACTIVE))
+#define IS_TTY_CHECK_CAR(p) ((p)->flags & ASYNC_CHECK_CD)
+#define TTY_SET_CHECK_CAR(p) ((p)->flags |= ASYNC_CHECK_CD)
+#define TTY_CLR_CHECK_CAR(p) ((p)->flags &= ~(ASYNC_CHECK_CD))
+#else
+#define IS_TTY_INIT(p) tty_port_initialized(p) 
+#define TTY_SET_INIT(p) tty_port_set_initialized(p, 1)
+#define TTY_CLR_INIT(p) tty_port_set_initialized(p, 0)
+#define IS_TTY_ACTIVE(p) tty_port_active(p)
+#define TTY_SET_ACTIVE(p) tty_port_set_active(p, 1)
+#define TTY_CLR_ACTIVE(p) tty_port_set_active(p, 0)
+#define IS_TTY_CHECK_CAR(p) tty_port_check_carrier(p)
+#define TTY_SET_CHECK_CAR(p) tty_port_set_check_carrier(p, 1)
+#define TTY_CLR_CHECK_CAR(p) tty_port_set_check_carrier(p, 0)
+#endif
+	
+// kernel 5.12 remove the jow_latency. 
+// However they do the same thing when ASYNC_LOW_LATENCY is set
+#if (LINUX_VERSION_CODE < VERSION_CODE(5,12,0))
+#define IS_TTY_LOW_LATENCY(p) ((p)->low_latency != 0)
+#define TTY_SET_LOW_LATENCY(p) {(p)->low_latency = 1;}
+#else
+#define IS_TTY_LOW_LATENCY(p) ((p)->flags & ASYNC_LOW_LATENCY)
+#define TTY_SET_LOW_LATENCY(p) ((p)->flags |= ASYNC_LOW_LATENCY)
+#define TTY_CLR_LOW_LATENCY(p) ((p)->flags &= ~(ASYNC_LOW_LATENCY))
+#endif
+
+// Fedora kernel 5.14 replace the function return type from int to unsigned int
+#if (LINUX_VERSION_CODE >= VERSION_CODE(5,14,0))
+#define _REDHAT_INT_ unsigned int
+#else
+#define _REDHAT_INT_ int
+#endif
+
+// kernel 5.14 replace current->state to current->__state
+#if (LINUX_VERSION_CODE >= VERSION_CODE(5,14,0))
+#define _KSTATE __state
+#else
+#define _KSTATE state
+#endif
+
+// kernel 5.15 has following changes
+//   put_tty_driver => tty_driver_kref_put
+#if (LINUX_VERSION_CODE >= VERSION_CODE(5,15,0))
+#define _PUT_TTY_DRIVER tty_driver_kref_put 
+#else
+#define _PUT_TTY_DRIVER put_tty_driver
+#endif
+
+// kernel 5.17 has following changes
+//   PDE_DATA => pde_data
+#if (LINUX_VERSION_CODE >= VERSION_CODE(5,17,0))
+#define _PDE_DATA pde_data
+#else
+#define _PDE_DATA PDE_DATA
+#endif
+
+// Rocky 9.1 (kernel 5.14) has privately updated PDE_DATA
+#if (OS_TYPE==ROCKY_ID)
+#undef _PDE_DATA
+#if (LINUX_VERSION_CODE >= VERSION_CODE(5,14,0))
+#define _PDE_DATA pde_data
+#else
+#define _PDE_DATA PDE_DATA
+#endif
+#endif
+
+//========== end of kernel dependant code =========
 
 /* include/linux/semaphore.h modification */
 #define init_MUTEX(sem) sema_init(sem, 1)
@@ -132,6 +203,18 @@
 
 #define		NPREALMAJOR		 33
 #define		NPREALCUMAJOR	 38
+
+#ifndef TTYNAME
+#define TTY_NAME "ttyr"
+#else
+#define DEF2STR_(s) #s
+#define DEF2STR(s) DEF2STR_(s)
+#define TTY_NAME DEF2STR(TTYNAME)
+#endif
+
+#ifndef NP_TIMEOUT
+#define NP_TIMEOUT 10
+#endif
 
 static int ttymajor=NPREALMAJOR;
 static int calloutmajor=NPREALCUMAJOR;
@@ -185,8 +268,8 @@ MODULE_LICENSE("GPL");
 #define NPREAL_NET_SETTING			5
 #define NPREAL_NET_GET_TTY_STATUS	6
 
-#define	NPREAL_CMD_TIMEOUT		10*HZ  // 10 seconds
-#define NPREAL_CMD_TRY				10
+#define	NPREAL_CMD_TIMEOUT		NP_TIMEOUT*HZ  // 10 seconds
+#define NPREAL_CMD_TRY				2
 
 #define	NPREAL_NET_CMD_RETRIEVE		1
 #define	NPREAL_NET_CMD_RESPONSE		2
@@ -283,7 +366,6 @@ struct npreal_struct
 #if (LINUX_VERSION_CODE >= VERSION_CODE(3,7,0))
 	struct tty_port ttyPort;
 #endif	
-	int			flags;		/* defined in tty.h */
 	int			type;		/* UART type */
 	struct tty_struct *	tty;
 	int			xmit_fifo_size;
@@ -322,6 +404,8 @@ struct npreal_struct
 	//  struct semaphore    tx_lock;
 	spinlock_t          tx_lock;
 	struct semaphore    rx_semaphore;
+
+	int					closing;
 };
 
 struct nd_struct
@@ -375,9 +459,7 @@ static struct proc_dir_entry *  npvar_proc_root;
 static unsigned char *		npvar_tmp_buf;
 static struct semaphore 	npvar_tmp_buf_sem;
 
-#if LINUX_VERSION_CODE >= VERSION_CODE(5,6,0)
-static struct proc_ops npreal_net_fops;
-#else
+#if (LINUX_VERSION_CODE < VERSION_CODE(5,6,0))
 static struct file_operations npreal_net_fops;
 #endif
 
@@ -394,19 +476,25 @@ static void npreal_flush_to_ldisc(struct work_struct *work);
 static int	npreal_open(struct tty_struct *,struct file *);
 static void	npreal_close(struct tty_struct *,struct file *);
 static int	npreal_write(struct tty_struct *,const unsigned char *,int);
-static int	npreal_write_room(struct tty_struct *);
+
+static _REDHAT_INT_ npreal_write_room(struct tty_struct *);
 static void	npreal_flush_buffer(struct tty_struct *);
 static void	npreal_ldisc_flush_buffer(struct tty_struct *);
-static int	npreal_chars_in_buffer(struct tty_struct *);
+static _REDHAT_INT_ npreal_chars_in_buffer(struct tty_struct *);
 static void	npreal_flush_chars(struct tty_struct *);
 static int	npreal_put_char(struct tty_struct *,unsigned char);
 static int	npreal_ioctl(struct tty_struct *,uint,ulong);
 static void	npreal_throttle(struct tty_struct *);
 static void	npreal_unthrottle(struct tty_struct *);
+#if(LINUX_VERSION_CODE < VERSION_CODE(6,1,0))
 static void	npreal_set_termios(struct tty_struct *,struct ktermios *);
+#else
+static void	npreal_set_termios(struct tty_struct *,const struct ktermios *);
+#endif
 static int	npreal_port_init(struct npreal_struct *,struct ktermios *);
 static void	npreal_stop(struct tty_struct *);
 static void	npreal_start(struct tty_struct *);
+static void	npreal_send_xchar(struct tty_struct * tty, char ch);
 static void	npreal_hangup(struct tty_struct *);
 static inline void npreal_check_modem_status(struct npreal_struct *,int);
 static int	npreal_block_til_ready(struct tty_struct *,struct file *, struct npreal_struct *);
@@ -416,7 +504,6 @@ static int 	npreal_port_shutdown(struct npreal_struct *);
 static int	npreal_get_serial_info(struct npreal_struct *, struct serial_struct *);
 static int	npreal_set_serial_info(struct npreal_struct *, struct serial_struct *);
 static int	npreal_get_lsr_info(struct npreal_struct *,unsigned int *);
-static void	npreal_send_break(struct npreal_struct *,int);
 
 static int 	npreal_tiocmget(struct tty_struct *);
 static int 	npreal_tiocmset(struct tty_struct *, unsigned int, unsigned int);
@@ -474,10 +561,23 @@ static struct tty_operations mpvar_ops =
 		.set_termios = npreal_set_termios,
 		.stop = npreal_stop,
 		.start = npreal_start,
+		.send_xchar = npreal_send_xchar,
 		.hangup = npreal_hangup,
 		.tiocmget = npreal_tiocmget,
 		.tiocmset = npreal_tiocmset,
 };
+
+#if (LINUX_VERSION_CODE >= VERSION_CODE(5,6,0))
+static const struct proc_ops npreal_net_fops = 
+{
+		.proc_read = npreal_net_read,
+		.proc_write = npreal_net_write,
+		.proc_open = npreal_net_open,
+		.proc_release = npreal_net_close,
+		.proc_ioctl = npreal_net_ioctl,
+		.proc_poll = npreal_net_select
+};
+#endif
 
 /*
  * The MOXA NPort server Real TTY driver boot-time initialization code!
@@ -495,7 +595,7 @@ static int __init npreal2_module_init(void)
 
 static void __exit npreal2_module_exit(void)
 {
-	int i,err = 0;
+	int i;
 	struct npreal_struct *info;
 	struct proc_dir_entry *de;
 
@@ -529,11 +629,8 @@ static void __exit npreal2_module_exit(void)
 	}
 
 	DBGPRINT(MX_DEBUG_INFO, "Unloading module npreal ...\n");
-	if ((err |= tty_unregister_driver(DRV_VAR)))
-	{
-		DBGPRINT(MX_DEBUG_ERROR, "Couldn't unregister MOXA Async/NPort server family Real TTY driver\n");
-	}
-	put_tty_driver(DRV_VAR);
+	tty_unregister_driver(DRV_VAR);
+	_PUT_TTY_DRIVER(DRV_VAR);
 
 	DBGPRINT(MX_DEBUG_INFO, "Done.\n");
 
@@ -595,7 +692,7 @@ npreal_init_tty(void)
 		tty_node->net_node = net_node;
 		tty_node->port = i;
 		tty_node->type = PORT_16550A;
-		tty_node->flags = 0;
+		tty_node->closing = 0;
 		tty_node->xmit_fifo_size = 16;
 		tty_node->baud_base = 921600L;
 		tty_node->close_delay = 5*HZ/10;
@@ -626,13 +723,20 @@ npreal_init(void)
 	int i;
 #endif
 
+#if (LINUX_VERSION_CODE >= VERSION_CODE(5,15,0))
+	npvar_sdriver = tty_alloc_driver(NPREAL_PORTS+1, 0);
+	if (IS_ERR(npvar_sdriver))
+		return PTR_ERR(npvar_sdriver);
+#else
 	npvar_sdriver = alloc_tty_driver(NPREAL_PORTS+1);
 	if (!npvar_sdriver)
 		return -ENOMEM;
+#endif	
+
 	printk("MOXA Async/NPort server family Real TTY driver ttymajor %d calloutmajor %d verbose %d (%s)\n", ttymajor, calloutmajor, verbose, NPREAL_VERSION);
 
 	/* Initialize the tty_driver structure */
-	DRV_VAR_P(name) = "ttyr";
+	DRV_VAR_P(name) = TTY_NAME;
 	DRV_VAR_P(major) = ttymajor;
 	DRV_VAR_P(minor_start) = 0;
 	DRV_VAR_P(type) = TTY_DRIVER_TYPE_SERIAL;
@@ -676,21 +780,13 @@ npreal_init(void)
 
 	if (ret1 || ret2)
 	{
-		put_tty_driver(DRV_VAR);
+		_PUT_TTY_DRIVER(DRV_VAR);
 		return -1;
 	}
 
 	/* Initialize the net node structure */
-/*	memset(&npreal_net_fops,0,sizeof(struct file_operations));*/
-	memset(&npreal_net_fops,0,sizeof(npreal_net_fops));
-#if LINUX_VERSION_CODE >= VERSION_CODE(5,6,0)
-	npreal_net_fops.proc_read = npreal_net_read;
-	npreal_net_fops.proc_write = npreal_net_write;
-	npreal_net_fops.proc_ioctl = npreal_net_ioctl;
-	npreal_net_fops.proc_open = npreal_net_open;
-	npreal_net_fops.proc_release = npreal_net_close;
-	npreal_net_fops.proc_poll = npreal_net_select;
-#else
+#if (LINUX_VERSION_CODE < VERSION_CODE(5,6,0))	
+	memset(&npreal_net_fops,0,sizeof(struct file_operations));
 	npreal_net_fops.read = npreal_net_read;
 	npreal_net_fops.write = npreal_net_write;
 	npreal_net_fops.unlocked_ioctl = npreal_net_ioctl;
@@ -698,6 +794,7 @@ npreal_init(void)
 	npreal_net_fops.release = npreal_net_close;
 	npreal_net_fops.poll = npreal_net_select;
 #endif
+	
 	if (npreal_init_tty() != 0)
 	{
 		tty_unregister_driver(DRV_VAR);
@@ -890,7 +987,7 @@ npreal_open(
 		return(-EIO);
 	}
 
-	if ( (info->count == 1) && (info->flags & ASYNC_SPLIT_TERMIOS) )
+	if ( (info->count == 1) && (info->ttyPort.flags & ASYNC_SPLIT_TERMIOS) )
 	{
 #if (LINUX_VERSION_CODE < VERSION_CODE(3,7,0))
 		if ( MX_TTY_DRV(subtype) == SERIAL_TYPE_NORMAL )
@@ -914,16 +1011,7 @@ else
 	info->session = MX_SESSION();
 	info->pgrp = MX_CGRP();
 
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,9,0))
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,2,0))
-	/* It must be always on */
-	tty->low_latency = 1;
-#else
-	tty->low_latency = 1; /* Read Issue */
-#endif /* 3,2,0 */
-#else
-	info->ttyPort.low_latency = 1;
-#endif /* 3,9,0 */
+	TTY_SET_LOW_LATENCY(&info->ttyPort);
 	return(0);
 }
 
@@ -968,13 +1056,8 @@ npreal_close(
 	}
 #endif
 
-#ifndef SP1
 	if ( (tty->count == 1) && (info->count != 1) )
 	{
-#else
-	if ( (atomic_read(&tty->count) == 1) && (info->count != 1) )
-	{
-#endif
 		/*
 		 * Uh, oh.	tty->count is 1, which means that the tty
 		 * structure will be freed.  Info->count should always
@@ -998,25 +1081,25 @@ npreal_close(
 
 	// Scott: 2005-09-05
 	// Prevent race condition on closing.
-	if (info->flags & ASYNC_CLOSING) {
+	if (info->closing) {
 		return;
 	}
 
-	info->flags |= ASYNC_CLOSING;
+	info->closing = 1;
 	tty->closing = 1;
 	/*
 	 * Save the termios structure, since this port may have
 	 * separate termios for callout and dialin.
 	 */
 #if (LINUX_VERSION_CODE < VERSION_CODE(3,7,0))
-	if ( info->flags & ASYNC_NORMAL_ACTIVE )
+	if ( IS_TTY_ACTIVE(&info->ttyPort) )
 		info->normal_termios = *tty->termios;
-	if ( info->flags & ASYNC_CALLOUT_ACTIVE )
+	if ( info->ttyPort.flags & ASYNC_CALLOUT_ACTIVE )
 		info->callout_termios = *tty->termios;
 #else
-	if ( info->flags & ASYNC_NORMAL_ACTIVE )
+	if ( IS_TTY_ACTIVE(&info->ttyPort) )
 		info->normal_termios = tty->termios;
-	if ( info->flags & ASYNC_CALLOUT_ACTIVE )
+	if ( info->ttyPort.flags & ASYNC_CALLOUT_ACTIVE )
 		info->callout_termios = tty->termios;
 #endif
 	/*
@@ -1044,7 +1127,7 @@ npreal_close(
 				break;
 			else
 				cnt = 0;
-			current->state = TASK_INTERRUPTIBLE;
+			current->_KSTATE = TASK_INTERRUPTIBLE;
 			schedule_timeout(HZ/100);
 		}
 	}
@@ -1089,8 +1172,8 @@ static int npreal_write(struct tty_struct * tty,
 
 	while ( 1 )
 	{
-		c = MIN(count, MIN(SERIAL_XMIT_SIZE - info->xmit_cnt - 1,
-				SERIAL_XMIT_SIZE - info->xmit_head));
+		c = MIN(count, MIN(UART_XMIT_SIZE - info->xmit_cnt - 1,
+				UART_XMIT_SIZE - info->xmit_head));
 
 		if ( c <= 0 )
 			break;
@@ -1105,7 +1188,7 @@ static int npreal_write(struct tty_struct * tty,
 			memcpy(info->xmit_buf + info->xmit_head, buf, c);
 
 		DOWN(info->tx_lock, flags);
-		info->xmit_head = (info->xmit_head + c) & (SERIAL_XMIT_SIZE - 1);
+		info->xmit_head = (info->xmit_head + c) & (UART_XMIT_SIZE - 1);
 		info->xmit_cnt += c;
 		UP(info->tx_lock, flags);
 
@@ -1151,7 +1234,7 @@ static int	npreal_put_char(struct tty_struct * tty, unsigned char ch)
 		return 0;
 	}
 
-	if ( info->xmit_cnt >= SERIAL_XMIT_SIZE - 1 )
+	if ( info->xmit_cnt >= UART_XMIT_SIZE - 1 )
 	{
 		//up(&info->tx_semaphore);
 		UP(info->tx_lock, flags);
@@ -1166,7 +1249,7 @@ static int	npreal_put_char(struct tty_struct * tty, unsigned char ch)
 	}
 
 	info->xmit_buf[info->xmit_head++] = ch;
-	info->xmit_head &= SERIAL_XMIT_SIZE - 1;
+	info->xmit_head &= UART_XMIT_SIZE - 1;
 	info->xmit_cnt++;
 
 	nd->tx_ready = 1;
@@ -1195,7 +1278,7 @@ static void npreal_wait_until_sent(struct tty_struct * tty,int timeout)
 
 }
 
-static int npreal_write_room(struct tty_struct * tty)
+static _REDHAT_INT_ npreal_write_room(struct tty_struct * tty)
 {
 	struct npreal_struct *info = (struct npreal_struct *)tty->driver_data;
 	int	ret;
@@ -1206,13 +1289,13 @@ static int npreal_write_room(struct tty_struct * tty)
 	if (!info)
 		return 0;
 
-	ret = SERIAL_XMIT_SIZE - info->xmit_cnt - 1;
+	ret = UART_XMIT_SIZE - info->xmit_cnt - 1;
 	if ( ret < 0 )
 		ret = 0;
 	return(ret);
 }
 
-static int npreal_chars_in_buffer(struct tty_struct * tty)
+static _REDHAT_INT_ npreal_chars_in_buffer(struct tty_struct * tty)
 {
 	struct npreal_struct *info = (struct npreal_struct *)tty->driver_data;
 
@@ -1305,7 +1388,7 @@ static void npreal_ldisc_flush_buffer(struct tty_struct * tty)
 	{
 		wake_up_interruptible( &nd->select_ex_wait );
 	}
-	current->state = TASK_INTERRUPTIBLE;
+	current->_KSTATE = TASK_INTERRUPTIBLE;
 	schedule_timeout(HZ/100);
 }
 
@@ -1314,7 +1397,6 @@ static int npreal_ioctl(struct tty_struct * tty,
 {
 	int			error;
 	struct npreal_struct *	info = (struct npreal_struct *)tty->driver_data;
-	int			retval;
 	struct async_icount	cprev, cnow;	    /* kernel counter temps */
 	struct serial_icounter_struct *p_cuser;     /* user space */
 	unsigned long 		templ;
@@ -1335,49 +1417,6 @@ static int npreal_ioctl(struct tty_struct * tty,
 	}
 	switch ( cmd )
 	{
-	case TCFLSH:
-		retval = tty_check_change(tty);
-		if (retval)
-		{
-			return retval;
-		}
-
-
-		switch (arg)
-		{
-		case TCIFLUSH:
-			if (tty->ldisc->ops->flush_buffer)
-				tty->ldisc->ops->flush_buffer(tty);
-			break;
-		case TCIOFLUSH:
-			if (tty->ldisc->ops->flush_buffer)
-				tty->ldisc->ops->flush_buffer(tty);
-			/* fall through */
-		case TCOFLUSH:
-			npreal_flush_buffer(tty);
-			break;
-		default:
-			return -EINVAL;
-		}
-		return 0;
-
-	case TCSBRK:	/* SVID version: non-zero arg --> no break */
-		retval = tty_check_change(tty);
-		if ( retval )
-			return(retval);
-		tty_wait_until_sent(tty, 0);
-		if ( !arg )
-			npreal_send_break(info, HZ/4);		/* 1/4 second */
-		return(0);
-
-	case TCSBRKP:	/* support for POSIX tcsendbreak() */
-		retval = tty_check_change(tty);
-		if ( retval )
-			return(retval);
-		tty_wait_until_sent(tty, 0);
-		npreal_send_break(info, arg ? arg*(HZ/10) : HZ/4);
-		return(0);
-
 	case TIOCGSOFTCAR:
 		error = ACCESS_OK(VERIFY_WRITE, (void *)arg, sizeof(long))?0:-EFAULT;
 		if ( error )
@@ -1457,7 +1496,7 @@ static int npreal_ioctl(struct tty_struct * tty,
 			schedule();
 			// Scott: 2005-09-04 add end
 		}
-		current->state = TASK_RUNNING;
+		current->_KSTATE = TASK_RUNNING;
 		remove_wait_queue(&info->delta_msr_wait, &wait);
 		// Scott: 2005-09-04
 		// Scott break;
@@ -1501,28 +1540,6 @@ static int npreal_ioctl(struct tty_struct * tty,
 
 		/* */
 		return(0);
-
-	case TCXONC:
-		DBGPRINT(MX_DEBUG_LOUD, "(DBG)\n");
-		retval = tty_check_change(tty);
-		if ( retval ){
-			DBGPRINT(MX_DEBUG_LOUD, "(DBG)\n");
-			return(retval);
-		}
-		switch (arg)
-		{
-		case TCOOFF:
-			DBGPRINT(MX_DEBUG_LOUD, "(DBG)\n");
-			return npreal_setxon_xoff(info, ASPP_CMD_SETXOFF);
-		case TCOON:
-			DBGPRINT(MX_DEBUG_LOUD, "(DBG)\n");
-			return npreal_setxon_xoff(info, ASPP_CMD_SETXON);
-			/* fall through */
-		default:
-			DBGPRINT(MX_DEBUG_LOUD, "(DBG)\n");
-			return -EINVAL;
-		}
-		return 0;
 	default:
 		return(-ENOIOCTLCMD);
 	}
@@ -1579,8 +1596,13 @@ static void npreal_unthrottle(struct tty_struct * tty)
  * Note : that a well-designed tty driver should be prepared to accept the case
  * where old == NULL, and try to do something rational.
  */
+#if (LINUX_VERSION_CODE < VERSION_CODE(6,1,0))
 static void npreal_set_termios(struct tty_struct * tty,
 		struct ktermios * old_termios)
+#else
+static void npreal_set_termios(struct tty_struct * tty,
+		const struct ktermios * old_termios)
+#endif
 {
 	struct npreal_struct *info = (struct npreal_struct *)tty->driver_data;
 
@@ -1597,12 +1619,19 @@ static void npreal_set_termios(struct tty_struct * tty,
  */
 static void npreal_stop(struct tty_struct * tty)
 {
-	DBGPRINT(MX_DEBUG_LOUD, "(Entry)\n");
+	struct npreal_struct *	info = (struct npreal_struct *)tty->driver_data;
+	npreal_setxon_xoff(info, ASPP_CMD_SETXOFF);
 }
 
 static void npreal_start(struct tty_struct * tty)
 {
-	DBGPRINT(MX_DEBUG_LOUD, "(Entry)\n");
+	struct npreal_struct *	info = (struct npreal_struct *)tty->driver_data;
+	npreal_setxon_xoff(info, ASPP_CMD_SETXON);
+}
+
+static void npreal_send_xchar(struct tty_struct * tty, char ch)
+{
+	// Do nothing
 }
 
 static void npreal_hangup(struct tty_struct *tty)
@@ -1616,10 +1645,10 @@ static void npreal_hangup(struct tty_struct *tty)
 
 	// Scott: 2005-09-05
 	// Prevent race condition on closing.
-	if (info->flags & ASYNC_CLOSING)
+	if (info->closing)
 		return;
 
-	info->flags |=  ASYNC_CLOSING;
+	info->closing = 1;
 	//
 	// do_tty_hangup() already do this
 	//	npreal_flush_buffer(tty);
@@ -1644,7 +1673,7 @@ static inline void npreal_check_modem_status(struct npreal_struct *info,
 	info->modem_status = status;
 	wake_up_interruptible(&info->delta_msr_wait);
 
-	if ( (info->flags & ASYNC_CHECK_CD) && (is_dcd_changed))
+	if ((IS_TTY_CHECK_CAR(&info->ttyPort)) && (is_dcd_changed))
 	{
 
 		if ( status & UART_MSR_DCD )
@@ -1709,17 +1738,17 @@ return(-EAGAIN);
 	 */
 	if ( MX_TTY_DRV(subtype) == SERIAL_TYPE_CALLOUT )
 	{
-		if ( info->flags & ASYNC_NORMAL_ACTIVE )
+		if ( IS_TTY_ACTIVE(&info->ttyPort) )
 			return(-EBUSY);
-		if ( (info->flags & ASYNC_CALLOUT_ACTIVE) &&
-				(info->flags & ASYNC_SESSION_LOCKOUT) &&
+		if ( (info->ttyPort.flags & ASYNC_CALLOUT_ACTIVE) &&
+				(info->ttyPort.flags & ASYNC_SESSION_LOCKOUT) &&
 				(info->session != MX_SESSION()) )
 			return(-EBUSY);
-		if ( (info->flags & ASYNC_CALLOUT_ACTIVE) &&
-				(info->flags & ASYNC_PGRP_LOCKOUT) &&
+		if ( (info->ttyPort.flags & ASYNC_CALLOUT_ACTIVE) &&
+				(info->ttyPort.flags & ASYNC_PGRP_LOCKOUT) &&
 				(info->pgrp != MX_CGRP()) )
 			return(-EBUSY);
-		info->flags |= ASYNC_CALLOUT_ACTIVE;
+		info->ttyPort.flags |= ASYNC_CALLOUT_ACTIVE;
 		return(0);
 	}
 
@@ -1730,15 +1759,15 @@ return(-EAGAIN);
 	if ( (filp->f_flags & O_NONBLOCK) ||
 			(tty->flags & (1 << TTY_IO_ERROR)) )
 	{
-		if ( info->flags & ASYNC_CALLOUT_ACTIVE )
+		if ( info->ttyPort.flags & ASYNC_CALLOUT_ACTIVE )
 		{
 			return(-EBUSY);
 		}
-		info->flags |= ASYNC_NORMAL_ACTIVE;
+		TTY_SET_ACTIVE(&info->ttyPort);
 		return(0);
 	}
 
-	if ( info->flags & ASYNC_CALLOUT_ACTIVE )
+	if ( info->ttyPort.flags & ASYNC_CALLOUT_ACTIVE )
 	{
 		if ( info->normal_termios.c_cflag & CLOCAL )
 			do_clocal = 1;
@@ -1765,12 +1794,12 @@ return(-EAGAIN);
 	while ( 1 )
 	{
 		set_current_state(TASK_INTERRUPTIBLE);
-		if ( tty_hung_up_p(filp) || (info->flags & ASYNC_CLOSING) )
+		if ( tty_hung_up_p(filp) || (info->closing) )
 		{
 			if ( !tty_hung_up_p(filp) )
 			{
 #ifdef SERIAL_DO_RESTART
-				if ( info->flags & ASYNC_HUP_NOTIFY )
+				if ( info->ttyPort.flags & ASYNC_HUP_NOTIFY )
 				{
 					retval = -EAGAIN;
 				}
@@ -1782,8 +1811,8 @@ retval = -EAGAIN;
 			}
 			break;
 		}
-		if ( !(info->flags & ASYNC_CALLOUT_ACTIVE) &&
-				!(info->flags & ASYNC_CLOSING) &&
+		if ( !(info->ttyPort.flags & ASYNC_CALLOUT_ACTIVE) &&
+				!(info->closing) &&
 				(do_clocal || (info->modem_status & UART_MSR_DCD)) )
 			break;
 		if ( signal_pending(current) )
@@ -1793,11 +1822,11 @@ retval = -EAGAIN;
 		}
 		schedule();
 	}
-	current->state = TASK_RUNNING;
+	current->_KSTATE = TASK_RUNNING;
 	remove_wait_queue(&info->open_wait, &wait);
 	if ( retval )
 		return(retval);
-	info->flags |= ASYNC_NORMAL_ACTIVE;
+	TTY_SET_ACTIVE(&info->ttyPort);
 	return(0);
 }
 
@@ -1830,7 +1859,7 @@ static int npreal_startup(struct npreal_struct * info,struct file *filp,struct t
 		}
 		schedule();
 	}
-	current->state = TASK_RUNNING;
+	current->_KSTATE = TASK_RUNNING;
 	remove_wait_queue(&nd->initialize_wait, &wait);
 
 	// Scott: 2005/07/13
@@ -1864,7 +1893,7 @@ static int npreal_startup(struct npreal_struct * info,struct file *filp,struct t
 #endif
 	}
 #endif
-	if ( info->flags & ASYNC_INITIALIZED )
+	if (IS_TTY_INIT(&info->ttyPort))
 	{
 		clear_bit(NPREAL_NET_DO_INITIALIZE,&nd->flag);
 		if ( waitqueue_active(&nd->initialize_wait))
@@ -1924,7 +1953,7 @@ static int npreal_startup(struct npreal_struct * info,struct file *filp,struct t
 			/* Check connection fail */
 			if(!rsp_buffer[2])
 			{
-				DBGPRINT(MX_DEBUG_ERROR, "(P%02d)LOCAL_CMD_TTY_USED shows connection failed\n" info->port);
+				DBGPRINT(MX_DEBUG_ERROR, "(P%02d)LOCAL_CMD_TTY_USED shows connection failed\n", info->port);
 				npreal_wait_and_set_command(nd,NPREAL_LOCAL_COMMAND_SET,LOCAL_CMD_TTY_UNUSED);
 				nd->cmd_buffer[2] = 0;
 				nd->cmd_ready = 1;
@@ -1977,7 +2006,7 @@ static int npreal_startup(struct npreal_struct * info,struct file *filp,struct t
 
 		while ((nd->cmd_ready == 1)&&(cnt++ < 10))
 		{
-			current->state = TASK_INTERRUPTIBLE;
+			current->_KSTATE = TASK_INTERRUPTIBLE;
 			schedule_timeout(HZ/100);
 		}
 	}
@@ -2052,7 +2081,7 @@ static int npreal_startup(struct npreal_struct * info,struct file *filp,struct t
 		test_and_clear_bit(TTY_IO_ERROR, &info->tty->flags);
 	info->xmit_cnt = info->xmit_head = info->xmit_tail = 0;
 
-	info->flags |= ASYNC_INITIALIZED;
+	TTY_SET_INIT(&info->ttyPort);
 	clear_bit(NPREAL_NET_DO_INITIALIZE,&nd->flag);
 	if ( waitqueue_active(&nd->initialize_wait))
 		wake_up_interruptible( &nd->initialize_wait );
@@ -2090,12 +2119,12 @@ static void npreal_shutdown(struct npreal_struct * info)
 	{
 		if ( signal_pending(current) )
 			break;
-		current->state = TASK_INTERRUPTIBLE;
+		current->_KSTATE = TASK_INTERRUPTIBLE;
 		schedule_timeout(HZ/100);
 	}
 
 
-	if ( !(info->flags & ASYNC_INITIALIZED) )
+	if ( !(IS_TTY_INIT(&info->ttyPort)) )
 	{
 		goto shutdown_ok;
 	}
@@ -2128,7 +2157,10 @@ static void npreal_shutdown(struct npreal_struct * info)
 	npreal_port_shutdown(info);
 	/* Make sure to disconnect the socket ,race with ASYNC_INITIALIZED */
 	//npreal_disconnect(nd, rsp_buffer, &rsp_length);
-	info->flags &= ~(ASYNC_NORMAL_ACTIVE|ASYNC_CALLOUT_ACTIVE|ASYNC_INITIALIZED|ASYNC_CLOSING);
+	info->ttyPort.flags &= ~(ASYNC_CALLOUT_ACTIVE);
+	TTY_CLR_INIT(&info->ttyPort);
+	TTY_CLR_ACTIVE(&info->ttyPort);
+	info->closing = 0;
 	down (&info->rx_semaphore);
 	info->tty = 0;
 	up (&info->rx_semaphore);
@@ -2229,19 +2261,19 @@ static int npreal_port_init(struct npreal_struct *info,
 	case B38400:
 		baud = 38400L;
 		baudIndex = ASPP_IOCTL_B38400;
-		if ( (info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_HI )
+		if ( (info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_HI )
 		{
 			baud = 57600L;
 			baudIndex = ASPP_IOCTL_B57600;
 		}
-		if ( (info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_VHI )
+		if ( (info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_VHI )
 		{
 			baud = 115200L;
 			baudIndex = ASPP_IOCTL_B115200;
 		}
 
 #ifdef ASYNC_SPD_SHI
-		if ((info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_SHI)
+		if ((info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_SHI)
 		{
 			baud = 230400L;
 			baudIndex = ASPP_IOCTL_B230400;
@@ -2249,7 +2281,7 @@ static int npreal_port_init(struct npreal_struct *info,
 #endif
 
 #ifdef ASYNC_SPD_WARP
-		if ((info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_WARP)
+		if ((info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_WARP)
 		{
 			baud = 460800L;
 			baudIndex = ASPP_IOCTL_B460800;
@@ -2317,7 +2349,7 @@ static int npreal_port_init(struct npreal_struct *info,
 		baudIndex = 0xff;
 	}
 #ifdef ASYNC_SPD_CUST
-	if ((info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_CUST)
+	if ((info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_CUST)
 	{
 		baudIndex = 0xff;           //force to use SET_BAUD later...
 	}
@@ -2450,7 +2482,7 @@ CONSSL3:
 			DBGPRINT(MX_DEBUG_ERROR, "set ASPP_CMD_SETBAUD failed\n");
 			return ret;
 		}
-		if ((info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_CUST)
+		if ((info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_CUST)
 		{
 			if(info->custom_divisor)
 				baud = info->baud_base/info->custom_divisor;
@@ -2537,11 +2569,11 @@ CONSSL4:
 
 	if ( termio->c_cflag & CLOCAL )
 	{
-		info->flags &= ~ASYNC_CHECK_CD;
+		TTY_CLR_CHECK_CAR(&info->ttyPort);
 	}
 	else
 	{
-		info->flags |= ASYNC_CHECK_CD;
+		TTY_SET_CHECK_CAR(&info->ttyPort);
 	}
 	if ( !info->tty)
 	{
@@ -2582,6 +2614,7 @@ static int npreal_port_shutdown(struct npreal_struct *info)
 			LOCAL_CMD_TTY_UNUSED,NPREAL_CMD_TIMEOUT,
 			rsp_buffer,
 			&rsp_length) != 0) {
+
 		npreal_wait_and_set_command(nd,
 				NPREAL_LOCAL_COMMAND_SET,
 				LOCAL_CMD_TTY_UNUSED);
@@ -2596,6 +2629,7 @@ static int npreal_port_shutdown(struct npreal_struct *info)
 				rsp_buffer,
 				&rsp_length);
 	}
+
 	nd->flag &= ~NPREAL_NET_TTY_INUSED;
 	return(0);
 }
@@ -2668,19 +2702,19 @@ static int npreal_port_shutdown(struct npreal_struct *info)
 	case B38400:
 		baud = 38400L;
 		baudIndex = ASPP_IOCTL_B38400;
-		if ( (info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_HI )
+		if ( (info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_HI )
 		{
 			baud = 57600L;
 			baudIndex = ASPP_IOCTL_B57600;
 		}
-		if ( (info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_VHI )
+		if ( (info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_VHI )
 		{
 			baud = 115200L;
 			baudIndex = ASPP_IOCTL_B115200;
 		}
 
 #ifdef ASYNC_SPD_SHI
-if ((info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_SHI)
+if ((info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_SHI)
 {
 baud = 230400L;
 baudIndex = ASPP_IOCTL_B230400;
@@ -2688,7 +2722,7 @@ baudIndex = ASPP_IOCTL_B230400;
 #endif
 
 #ifdef ASYNC_SPD_WARP
-if ((info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_WARP)
+if ((info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_WARP)
 {
 baud = 460800L;
 baudIndex = ASPP_IOCTL_B460800;
@@ -2838,7 +2872,7 @@ static int npreal_get_serial_info(struct npreal_struct * info,
 	memset(&tmp, 0, sizeof(tmp));
 	tmp.type = info->type;
 	tmp.line = info->port;
-	tmp.flags = info->flags;
+	tmp.flags = info->ttyPort.flags;
 	tmp.close_delay = info->close_delay;
 	tmp.closing_wait = info->closing_wait;
 	tmp.custom_divisor = info->custom_divisor;
@@ -2864,15 +2898,15 @@ static int npreal_set_serial_info(struct npreal_struct * info,
 	if (copy_from_user(&new_serial, new_info, sizeof(new_serial)))
 		return(-EFAULT);
 
-	flags = info->flags & ASYNC_SPD_MASK;
+	flags = info->ttyPort.flags & ASYNC_SPD_MASK;
 
 	if ( !capable(CAP_SYS_ADMIN))
 	{
 		if ((new_serial.close_delay != info->close_delay) ||
 				((new_serial.flags & ~ASYNC_USR_MASK) !=
-						(info->flags & ~ASYNC_USR_MASK)) )
+						(info->ttyPort.flags & ~ASYNC_USR_MASK)) )
 			return(-EPERM);
-		info->flags = ((info->flags & ~ASYNC_USR_MASK) |
+		info->ttyPort.flags = ((info->ttyPort.flags & ~ASYNC_USR_MASK) |
 				(new_serial.flags & ASYNC_USR_MASK));
 	}
 	else
@@ -2881,7 +2915,7 @@ static int npreal_set_serial_info(struct npreal_struct * info,
 		 * OK, past this point, all the error checking has been done.
 		 * At this point, we start making changes.....
 		 */
-		info->flags = ((info->flags & ~ASYNC_FLAGS) |
+		info->ttyPort.flags = ((info->ttyPort.flags & ~ASYNC_FLAGS) |
 				(new_serial.flags & ASYNC_FLAGS));
 		info->close_delay = new_serial.close_delay * HZ/100;
 		// Scott: 2005-07-08
@@ -2908,9 +2942,9 @@ static int npreal_set_serial_info(struct npreal_struct * info,
 	}
 	else
 		info->xmit_fifo_size = 1;
-	if ( info->flags & ASYNC_INITIALIZED )
+	if ( IS_TTY_INIT(&info->ttyPort) )
 	{
-		if ( flags != (info->flags & ASYNC_SPD_MASK) )
+		if ( flags != (info->ttyPort.flags & ASYNC_SPD_MASK) )
 		{
 			retval=npreal_port_init(info,0);
 		}
@@ -3041,26 +3075,6 @@ static int npreal_break(struct tty_struct *ttyinfo, int break_state)
 
 }
 
-/*
- * This routine sends a break character out the serial port.
- */
-static void npreal_send_break(struct npreal_struct * info, int duration)
-{
-	struct	nd_struct	*nd;
-
-	if (!(nd = info->net_node))
-		return;
-
-	npreal_start_break(nd);
-
-	current->state = TASK_INTERRUPTIBLE;
-	schedule_timeout(duration);
-
-	npreal_stop_break(nd);
-
-}
-
-
 static int npreal_tiocmget(struct tty_struct *tty)
 {
 	struct npreal_struct *info = (struct npreal_struct *) tty->driver_data;
@@ -3151,110 +3165,6 @@ static void tty_buffer_free(struct tty_struct *tty, struct tty_buffer *b)
  * This routine is called out of the software interrupt to flush data
  * from the flip buffer to the line discipline.
  */
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,12,0))           
-static void npreal_flush_to_ldisc(struct work_struct *work)
-{
-	struct npreal_struct *	info =
-			container_of(work, struct npreal_struct, process_flip_tqueue);
-	struct tty_struct *	tty;
-	int		count;
-
-	struct tty_ldisc *disc;
-	struct tty_buffer *tbuf, *head;
-	unsigned long 	flags;
-	unsigned char	*fp;
-	char		*cp;
-
-	if (!info){
-		DBGPRINT(MX_DEBUG_ERROR, "MxDebug: info is null @ %d %s\n", __LINE__, __FUNCTION__);
-		goto done;
-	}
-
-	tty = info->tty;
-	if( !tty ){
-		DBGPRINT(MX_DEBUG_ERROR, "MxDebug: tty is null @ %d %s\n", __LINE__, __FUNCTION__);
-		up(&info->rx_semaphore);
-		goto done;
-	}
-
-	disc = tty_ldisc_ref(tty);
-	if (disc == NULL){ /*  !TTY_LDISC */
-		DBGPRINT(MX_DEBUG_ERROR, "MxDebug: disc is null @ %d %s\n", __LINE__, __FUNCTION__);
-		return;
-	}
-
-	if ( tty && (info->flags & ASYNC_INITIALIZED))
-	{
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,8,0))  
-		spin_lock_irqsave(&tty->buf.lock, flags);
-		head = tty->buf.head;
-#else
-		spin_lock_irqsave(&tty->port->buf.lock, flags);
-		head = tty->port->buf.head;
-#endif
-		if (head != NULL)
-		{
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,8,0))          
-			tty->buf.head = NULL;
-#else
-			tty->port->buf.head = NULL;
-#endif
-			for (;;)
-			{
-				count = head->commit - head->read;
-				if (!count)
-				{
-					if (head->next == NULL)
-						break;
-					tbuf = head;
-					head = head->next;
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,12,0))          
-					tty_buffer_free(tty, tbuf);
-#else 
-					tty_buffer_free(tty->port, tbuf);
-#endif
-					continue;
-				}
-				if (!tty->receive_room)
-				{
-					schedule_work(&tty->SAK_work);
-					break;
-				}
-				if (count > tty->receive_room)
-					count = tty->receive_room;
-				cp = head->char_buf_ptr + head->read;
-				fp = head->flag_buf_ptr + head->read;
-				head->read += count;
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,8,0))                    
-				spin_unlock_irqrestore(&tty->buf.lock, flags);
-#else
-				spin_unlock_irqrestore(&tty->port->buf.lock, flags);
-#endif
-				disc->ops->receive_buf(tty, cp, fp, count);
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,8,0))    
-				spin_lock_irqsave(&tty->buf.lock, flags);
-#else
-				spin_lock_irqsave(&tty->port->buf.lock, flags);
-#endif
-			}
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,8,0))                
-			tty->buf.head = head;
-#else
-			tty->port->buf.head = head;
-#endif
-		}
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,8,0))           
-		spin_unlock_irqrestore(&tty->buf.lock, flags);
-#else
-		spin_unlock_irqrestore(&tty->port->buf.lock, flags);
-#endif
-		tty_ldisc_deref(disc);
-	}
-
-	done:
-	;
-}
-#else
 static void npreal_flush_to_ldisc(struct work_struct *work)
 {
 	struct npreal_struct *	info =
@@ -3272,7 +3182,6 @@ static void npreal_flush_to_ldisc(struct work_struct *work)
 
 	tty_flip_buffer_push(port);
 }
-#endif
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -3360,7 +3269,7 @@ npreal_net_open (
 #else
 
 	//nd = (struct nd_struct *) &npvar_net_nodes[0];
-	nd = (struct nd_struct *) PDE_DATA(inode);
+	nd = (struct nd_struct *) _PDE_DATA(inode);
 #endif /* 3,10,0 */
 	if ( !nd )
 	{
@@ -3551,10 +3460,13 @@ npreal_net_ioctl (
 			down(&nd->cmd_semaphore);
 			memcpy(nd->rsp_buffer,rsp_buffer,size);
 			nd->rsp_length = size;
-			up(&nd->cmd_semaphore);
-			if ( waitqueue_active(&nd->cmd_rsp_wait)){
+
+			if (!nd->cmd_rsp_flag) {
 				nd->cmd_rsp_flag = 1;
+				up(&nd->cmd_semaphore);
 				wake_up_interruptible(&nd->cmd_rsp_wait);
+			} else {
+				up(&nd->cmd_semaphore);
 			}
 			break;
 		}
@@ -3604,13 +3516,18 @@ npreal_net_ioctl (
 		{
 			if (size == 5)
 			{
+				down(&nd->cmd_semaphore);
 				memcpy(nd->rsp_buffer,rsp_buffer,size);
 				nd->oqueue = rsp_buffer[4]*16 + rsp_buffer[3];
 				nd->rsp_length = size;
 				nd->wait_oqueue_responsed = 1;
-				if ( waitqueue_active(&nd->cmd_rsp_wait)){
+
+				if (!nd->cmd_rsp_flag) {
 					nd->cmd_rsp_flag = 1;
+					up(&nd->cmd_semaphore);
 					wake_up_interruptible(&nd->cmd_rsp_wait);
+				} else {
+					up(&nd->cmd_semaphore);
 				}
 			}
 		}
@@ -3619,10 +3536,13 @@ npreal_net_ioctl (
 			down(&nd->cmd_semaphore);
 			memcpy(nd->rsp_buffer,rsp_buffer,size);
 			nd->rsp_length = size;
-			up(&nd->cmd_semaphore);
-			if ( waitqueue_active(&nd->cmd_rsp_wait)){
+
+			if (!nd->cmd_rsp_flag) {
 				nd->cmd_rsp_flag = 1;
+				up(&nd->cmd_semaphore);
 				wake_up_interruptible(&nd->cmd_rsp_wait);
+			} else {
+				up(&nd->cmd_semaphore);
 			}
 		}
 
@@ -3648,10 +3568,15 @@ npreal_net_ioctl (
 		nd->flag &= ~NPREAL_NET_NODE_CONNECTED;
 		nd->flag |= NPREAL_NET_NODE_DISCONNECTED;
 		nd->flag &= ~NPREAL_NET_TTY_INUSED;  //clean inused flag
-		if (waitqueue_active(&nd->cmd_rsp_wait)){
+
+		down(&nd->cmd_semaphore);
+		if (!nd->cmd_rsp_flag) {
 			nd->wait_oqueue_responsed = 1;
 			nd->cmd_rsp_flag = 1;
+			up(&nd->cmd_semaphore);
 			wake_up_interruptible(&nd->cmd_rsp_wait);
+		} else {
+			up(&nd->cmd_semaphore);
 		}
 		break;
 
@@ -3802,7 +3727,7 @@ npreal_net_read (
 	while ( count )
 	{
 		cnt = MIN(count, MIN( info->xmit_cnt,
-				SERIAL_XMIT_SIZE - info->xmit_tail));
+				UART_XMIT_SIZE - info->xmit_tail));
 		if ( cnt <= 0 )
 			break;
 		if (copy_to_user( buf+rtn,info->xmit_buf + info->xmit_tail,cnt ))
@@ -3816,7 +3741,7 @@ npreal_net_read (
 		DOWN(info->tx_lock, flags);
 		info->xmit_cnt -= cnt;
 		info->xmit_tail += cnt;
-		info->xmit_tail = info->xmit_tail & (SERIAL_XMIT_SIZE - 1);
+		info->xmit_tail = info->xmit_tail & (UART_XMIT_SIZE - 1);
 		info->icount.tx += cnt;
 		UP(info->tx_lock, flags);
 	}
@@ -3900,7 +3825,7 @@ npreal_net_write (
 		goto done;
 	}
 
-	if (info->flags & ASYNC_CLOSING)
+	if (info->closing)
 	{
 		rtn = count; /* throw it away*/
 		goto done;
@@ -3922,11 +3847,7 @@ npreal_net_write (
 		up(&info->rx_semaphore);
 		goto done;
 	}
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,9,0))
-	if(!info->tty->low_latency)
-#else
-		if(!info->ttyPort.low_latency)
-#endif /* 3,9,0 */
+		if(!IS_TTY_LOW_LATENCY(&info->ttyPort))
 		{
 			rtn = count; /* throw it away*/
 			up(&info->rx_semaphore);
@@ -4056,7 +3977,9 @@ npreal_wait_and_set_command(
 		return (-EIO);
 	}
 
+	down (&nd->cmd_semaphore);
 	nd->cmd_rsp_flag = 0;
+	up (&nd->cmd_semaphore);
 
 	et = jiffies + NPREAL_CMD_TIMEOUT;
 	while (1)
@@ -4079,7 +4002,7 @@ npreal_wait_and_set_command(
 		else
 		{
 			up (&nd->cmd_semaphore);
-			current->state = TASK_INTERRUPTIBLE;
+			current->_KSTATE = TASK_INTERRUPTIBLE;
 			schedule_timeout(1);
 		}
 	}
@@ -4197,11 +4120,7 @@ npreal_process_notify(
 			up (&info->rx_semaphore);
 			return;
 		}
-#if (LINUX_VERSION_CODE < VERSION_CODE(3,9,0))
-		if(!tty->low_latency)
-#else
-			if(!info->ttyPort.low_latency)
-#endif /* 3,9,0 */
+			if(!IS_TTY_LOW_LATENCY(&info->ttyPort))
 			{
 				up (&info->rx_semaphore);
 				return;
@@ -4209,7 +4128,7 @@ npreal_process_notify(
 #if (LINUX_VERSION_CODE < VERSION_CODE(3,9,0))
 		tty_insert_flip_char(tty, 0, TTY_BREAK);
 #else
-		tty_insert_flip_char(&info->ttyPort, 0, TTY_BREAK);
+		__tty_insert_flip_char(&info->ttyPort, 0, TTY_BREAK);
 #endif
 		up (&info->rx_semaphore);
 		info->icount.rx ++;
@@ -4217,7 +4136,7 @@ npreal_process_notify(
 		info->icount.brk++;
 		MXQ_TASK(&info->process_flip_tqueue);
 
-		if ( info->flags & ASYNC_SAK )
+		if ( info->ttyPort.flags & ASYNC_SAK )
 		{
 			do_SAK(info->tty);
 		}
@@ -4251,7 +4170,7 @@ npreal_do_session_recovery(struct npreal_struct *info)
 		return;
 	if (!(nd->flag & NPREAL_NET_NODE_CONNECTED))
 		return;
-	if (info->flags & ASYNC_INITIALIZED)
+	if (IS_TTY_INIT(&info->ttyPort))
 	{
 #if (LINUX_VERSION_CODE < VERSION_CODE(3,7,0)) 	    
 		if (!(termio = info->tty->termios))
@@ -4317,19 +4236,19 @@ npreal_do_session_recovery(struct npreal_struct *info)
 	case B38400:
 		baud = 38400L;
 		baudIndex = ASPP_IOCTL_B38400;
-		if ( (info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_HI )
+		if ( (info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_HI )
 		{
 			baud = 57600L;
 			baudIndex = ASPP_IOCTL_B57600;
 		}
-		if ( (info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_VHI )
+		if ( (info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_VHI )
 		{
 			baud = 115200L;
 			baudIndex = ASPP_IOCTL_B115200;
 		}
 
 #ifdef ASYNC_SPD_SHI
-		if ((info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_SHI)
+		if ((info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_SHI)
 		{
 			baud = 230400L;
 			baudIndex = ASPP_IOCTL_B230400;
@@ -4337,7 +4256,7 @@ npreal_do_session_recovery(struct npreal_struct *info)
 #endif
 
 #ifdef ASYNC_SPD_WARP
-		if ((info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_WARP)
+		if ((info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_WARP)
 		{
 			baud = 460800L;
 			baudIndex = ASPP_IOCTL_B460800;
@@ -4406,7 +4325,7 @@ break;
 		baudIndex = 0xff;
 	}
 #ifdef ASYNC_SPD_CUST
-	if ((info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_CUST)
+	if ((info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_CUST)
 	{
 		baudIndex = 0xff;
 	}
@@ -4435,7 +4354,7 @@ break;
 	//
 	// flow control
 	//
-	if (info->flags & ASYNC_INITIALIZED)
+	if (IS_TTY_INIT(&info->ttyPort))
 	{
 		if (termio->c_cflag & CRTSCTS)
 		{
@@ -4472,7 +4391,7 @@ break;
 	{
 		nd->cmd_buffer[index+0] = ASPP_CMD_SETBAUD;
 		nd->cmd_buffer[index+1] = 4;
-		if((info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_CUST)
+		if((info->ttyPort.flags & ASYNC_SPD_MASK) == ASYNC_SPD_CUST)
 		{
 			if (info->custom_divisor)
 				baud=info->baud_base/info->custom_divisor;
@@ -4553,7 +4472,9 @@ npreal_wait_oqueue(
 	{
 #if (LINUX_VERSION_CODE >= VERSION_CODE(3,15,0))
 		if( wait_event_interruptible_timeout(nd->cmd_rsp_wait, nd->cmd_rsp_flag==1, 1) != 0 ){
+			down (&nd->cmd_semaphore);
 			nd->cmd_rsp_flag = 0;
+			up (&nd->cmd_semaphore);
 		}
 #else
 		interruptible_sleep_on_timeout(&nd->cmd_rsp_wait,1);
@@ -4577,7 +4498,9 @@ npreal_wait_oqueue(
 		{
 #if (LINUX_VERSION_CODE >= VERSION_CODE(3,15,0))
 			if(wait_event_interruptible_timeout(nd->cmd_rsp_wait, nd->cmd_rsp_flag==1, timeout)){
+				down (&nd->cmd_semaphore);
 				nd->cmd_rsp_flag = 0;
+				up (&nd->cmd_semaphore);
 			}
 #else
 			timeout =

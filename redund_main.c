@@ -1,12 +1,9 @@
-/*
- *	Copyright (C) 2001  Moxa Inc.
- *	All rights reserved.
- *
- *	Moxa NPort/Async Server UNIX Real TTY daemon program.
- *
- *	Usage: npreal2d_redund [-t reset-time]
- *
- */
+
+/* Copyright (C) MOXA Inc. All rights reserved.
+
+   This is free software distributed under the terms of the
+   GNU Public License.  See the file COPYING-GPL for details.
+*/
 
 #include	"np_ver.h"
 
@@ -564,6 +561,7 @@ char *	cmdpath;
 #else
 	int32_t            temp;
 #endif
+	char		tmpstr[256];
 
 	redundant_mode = 0;
 	// Scott: 2005-10-03
@@ -662,7 +660,9 @@ char *	cmdpath;
 		}
 
 		//        server_type = CN2500;
-		sprintf(infop->mpt_name,"/proc/npreal2/%s",ttyname);
+		sprintf(tmpstr,"/proc/npreal2/%s",ttyname);
+		memset(infop->mpt_name, 0, sizeof(infop->mpt_name));
+		memcpy(infop->mpt_name, tmpstr, sizeof(infop->mpt_name)-1);
 
 #ifdef DNS_NAME_RESOLVE
 		resolve_dns_host_name(infop);
@@ -972,6 +972,10 @@ char *	msg;
 {
     if (Restart_daemon)
         return;
+
+#if MOXA_DEBUG
+	printf("%s\n", msg);
+#endif
 
     _log_event_backup(EventLog, msg);
 }

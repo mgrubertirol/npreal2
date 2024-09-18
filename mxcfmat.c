@@ -1,3 +1,10 @@
+
+/* Copyright (C) MOXA Inc. All rights reserved.
+
+   This is free software distributed under the terms of the
+   GNU Public License.  See the file COPYING-GPL for details.
+*/
+
 #include "nport.h"
 #include <string.h>
 #include <stdlib.h>
@@ -34,6 +41,7 @@ int main(int arg, char *argv[])
     if (ft == NULL)
     {
         printf("file open error2\n");
+	fclose(f);
         free(tmpstr);
         free(token);
         return(0);
@@ -79,7 +87,7 @@ int main(int arg, char *argv[])
                     flag = 1;
                     break;
                 }
-                sprintf(token, "%s\t%s", token, chk);  //  [Nport IP]
+                sprintf(token + strlen(token), "\t%s", chk);  //  [Nport IP]
             }
         }
         if (flag == 1)

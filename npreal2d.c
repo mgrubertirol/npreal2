@@ -1,14 +1,7 @@
-/*
- *	Copyright (C) 2001  Moxa Inc.
- *	All rights reserved.
- *
- *	Moxa NPort/Async Server UNIX Real TTY daemon program.
- *
- *	Usage: npreal2d [-t reset-time]
- *
- *	Compilation instructions:
- *		LINUX:	cc -O -o npreal2d npreal2d.c
- *
+/* Copyright (C) MOXA Inc. All rights reserved.
+
+   This is free software distributed under the terms of the
+   GNU Public License.  See the file COPYING-GPL for details.
  */
 
 #include	"np_ver.h"
@@ -89,6 +82,7 @@ void	wait_handle (int);
 void	connect_wait_handle (int);
 void    config_changed_handle (int);
 #endif
+
 int     Gconfig_changed;
 char    Gcffile[160];
 
@@ -125,6 +119,7 @@ char *	argv[];
 	No_tty_defined = 0;
 	polling_fd = -1; /* Add by Ying */
 
+{ char buf[100]; sprintf(buf, "logger \">> Enter %s @ %d\"", __FILE__, __LINE__); system(buf); }
 	for(i=0; i<2; i++)
 		polling_nport_fd[i] = -1;
 
@@ -269,6 +264,7 @@ char *	argv[];
 #ifdef  STREAM
 		signal (SIGUSR1, config_changed_handle);
 #endif
+
 		Gconfig_changed = 0;
 		if (Graw_mode)
 			moxattyd_handle_ttys(); /* child process ok */
@@ -729,7 +725,10 @@ char *	cmdpath;
 		}
 
 		//server_type = CN2500;
-		sprintf(infop->mpt_name,"/proc/npreal2/%s",ttyname);
+
+		sprintf(tmpstr, "/proc/npreal2/%s", ttyname);
+		memset(infop->mpt_name, 0, sizeof(infop->mpt_name));
+		memcpy(infop->mpt_name, tmpstr, sizeof(infop->mpt_name)-1); 
 
 		resolve_dns_host_name(infop);
 
@@ -1143,15 +1142,19 @@ void poll_async_server_recv()
 			msg[93] = msg[23];
 			msg[94] = msg[24];
 			msg[95] = msg[25];
+
+			char *log_msg;
+			log_msg = (char *)malloc(100);
+
 			if (msg[93]) /* x.x.[x] */
-				sprintf((char *)msg,
+				sprintf(log_msg,
 						"IP=%d.%d.%d.%d, Ver=%x.%x.%x[0x%02x%02x%02x] is alive.",
 						(int)(msg[96]), (int)(msg[97]), (int)(msg[98]),
 						(int)(msg[99]), (int)(msg[95]), (int)(msg[94]),
 						(int)(msg[93]), (int)(msg[95]), (int)(msg[94]),
 						(int)(msg[93]));
 			else
-				sprintf((char *)msg,
+				sprintf(log_msg,
 						"IP=%d.%d.%d.%d, Ver=%x.%x(0x%02x%02x) is alive.",
 						(int)(msg[96]), (int)(msg[97]), (int)(msg[98]),
 						(int)(msg[99]), (int)(msg[95]), (int)(msg[94]),
@@ -1166,7 +1169,8 @@ void poll_async_server_recv()
 						(int)(msg[96]), (int)(msg[97]), (int)(msg[98]),
 						(int)(msg[99]), (int)(msg[95]), (int)(msg[94]));
 			 */
-			log_event(msg);
+			log_event(log_msg);
+			free(log_msg);
 		}
 		return;
 	}
@@ -1218,11 +1222,14 @@ void poll_async_server_recv()
 	}
 	if ( m )
 	{
+		char *log_msg;
+		log_msg = (char *)malloc(100);
 		*(uint32_t *)(&msg[96]) = *(u_long*)servp->ip6_addr;
-		sprintf((char *)msg, "Ports reset of NPort(Async) Server %d.%d.%d.%d !",
+		sprintf(log_msg, "Ports reset of NPort(Async) Server %d.%d.%d.%d !",
 				(int)(msg[96]), (int)(msg[97]), (int)(msg[98]),
 				(int)(msg[99]));
-		log_event(msg);
+		log_event(log_msg);
+		free(log_msg);
 	}
 }
 
@@ -1599,6 +1606,7 @@ int moxattyd_change_config() {
 	int32_t		server_type, disable_fifo;
 	int32_t		temp;
 	char		tmp_cmd[1024];
+	char		tmpstr[256];
 #ifdef SSL_ON
 	int32_t		ssl_enable;
 #endif
@@ -1678,7 +1686,10 @@ int moxattyd_change_config() {
 
 		printf("\n");
 
-		sprintf(infop->mpt_name, "/proc/npreal2/%s", ttyname);
+		sprintf(tmpstr, "/proc/npreal2/%s", ttyname);
+		memset(infop->mpt_name, 0, sizeof(infop->mpt_name));
+		memcpy(infop->mpt_name, tmpstr, sizeof(infop->mpt_name)-1); 
+
 		infop->tcp_port = data;
 
 		infop->cmd_port = cmd;
@@ -1823,6 +1834,7 @@ void moxattyd_handle_ttys()
 
 	while ( 1 )
 	{
+	
 		//printf("---------------------------------\n");
 		if (Restart_daemon)
 		{
@@ -2067,7 +2079,7 @@ void moxattyd_handle_ttys()
 							//sprintf(mm, "logger \"CFD>(%d) CMD_TTY_USED, state=0x%X\"", infop->tcp_port, infop->state);
 #endif
 							//system(mm);
-
+system("logger 'TTY USED'");
 							if (infop->state != STATE_TTY_WAIT)
 							{
 #ifdef SSL_ON
@@ -2104,7 +2116,7 @@ void moxattyd_handle_ttys()
 							//sprintf(mm, "logger \"CFD>(%d) CMD_TTY_UNUSED\"", infop->tcp_port);
 #endif
 							//system(mm);
-
+system("logger 'TTY UNUSED'");
 #ifdef SSL_ON
 							if (infop->ssl_enable)
 							{

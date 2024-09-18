@@ -1,6 +1,11 @@
 PATH1="."
+PWD         := $(shell pwd)
+MX_VER_H    := $(PWD)/np_ver.h
+ifeq ($(KERNELRELEASE),)
+MX_VER_TXT  := $(PWD)/VERSION.TXT
+BUILD_VERSION   := $(shell awk '{if($$1=="Version:"){print $$2}}' $(MX_VER_TXT))
+endif
 BUILD_DATE:=$(shell date +%g%m%d%H)
-BUILD_VERSION:=5.0
 
 ##############################################################
 # Linux Kernel 5.0
@@ -9,101 +14,98 @@ BUILD_VERSION:=5.0
 all: module npreal2d npreal2d_redund tools
 SP1: module npreal2d npreal2d_redund tools
 ssl: module SSLnpreal2d npreal2d_redund tools
-ssl_con: module_con SSLnpreal2d npreal2d_redund tools
 SP1_ssl: module SSLnpreal2d npreal2d_redund tools
 ssl64: module SSL64npreal2d npreal2d_redund tools
 SP1_ssl64: module SSL64npreal2d npreal2d_redund tools
 ppc64: module ppc64npreal2d npreal2d_redund tools
 
-CC+=$(POLLING)
-
-lib: misc.c
-	$(CC) -Wall -c misc.c
-	$(AR) rcs misc.a misc.o 
+FLAGS += $(OS_TYPE)
+FLAGS += $(POLLING)
+FLAGS += -DTTYNAME='"$(TTY)"'
+FLAGS += -DNP_TIMEOUT='$(NP_TIMEOUT)'
+FLAGS += $(CFLAGS) $(LDFLAGS)
 
 npreal2d: npreal2d.o
-	$(CC) npreal2d.o -o npreal2d
-	strip	npreal2d
+	$(CROSS_COMPILE)$(CC) $(FLAGS) npreal2d.o -o npreal2d
+	$(CROSS_COMPILE)strip	npreal2d
 
 npreal2d.o : npreal2d.c npreal2d.h
-	$(CC) -c npreal2d.c
+	$(CROSS_COMPILE)$(CC) $(FLAGS) -c npreal2d.c
 
 npreal2d_redund: 	redund_main.o redund.o
-	$(CC)	redund_main.o redund.o -lpthread -o npreal2d_redund
-	strip	npreal2d_redund
+	$(CROSS_COMPILE)$(CC) $(FLAGS) redund_main.o redund.o -lpthread -o npreal2d_redund
+	$(CROSS_COMPILE)strip	npreal2d_redund
 
 redund_main.o:	redund_main.c npreal2d.h redund.h
-	$(CC) -c redund_main.c
+	$(CROSS_COMPILE)$(CC) $(FLAGS) -c redund_main.c
 
 redund.o:	redund.c redund.h npreal2d.h
-	$(CC) -c redund.c
+	$(CROSS_COMPILE)$(CC) $(FLAGS) -c redund.c
 
 SSLnpreal2d: 	SSLnpreal2d.o
-	cc	npreal2d.o -o npreal2d -lssl 
-	strip	npreal2d
+	$(CROSS_COMPILE)$(CC)	$(FLAGS) npreal2d.o -o npreal2d -lssl 
+	$(CROSS_COMPILE)strip	npreal2d
 
 SSLnpreal2d.o:	npreal2d.c
-	$(CC) -c -DSSL_ON -DOPENSSL_NO_KRB5 npreal2d.c -I$(PATH1)/include
+	$(CROSS_COMPILE)$(CC) $(FLAGS) -c -DSSL_ON -DOPENSSL_NO_KRB5 npreal2d.c -I$(PATH1)/include
 	
 SSL64npreal2d: 	SSL64npreal2d.o
-	cc	-m64 npreal2d.o -o npreal2d -lssl 
-	strip	npreal2d
+	$(CROSS_COMPILE)$(CC)   -m64 npreal2d.o -o npreal2d -lssl
+	$(CROSS_COMPILE)strip   npreal2d
 
 SSL64npreal2d.o:	npreal2d.c
-	$(CC) -c -m64 -DSSL_ON -DOPENSSL_NO_KRB5 npreal2d.c -I$(PATH1)/include
+	$(CROSS_COMPILE)$(CC) $(FLAGS) -c -m64 -DSSL_ON -DOPENSSL_NO_KRB5 npreal2d.c -I$(PATH1)/include
 	
 ppc64npreal2d: 	ppc64npreal2d.o
-	cc	-mpowerpc64 npreal2d.o -o npreal2d -lssl 
-	strip	npreal2d
+	$(CROSS_COMPILE)$(CC)   -mpowerpc64 npreal2d.o -o npreal2d -lssl
+	$(CROSS_COMPILE)strip   npreal2d
 
 ppc64npreal2d.o:	npreal2d.c
-	$(CC) -c -mpowerpc64 -DSSL_ON -DOPENSSL_NO_KRB5 npreal2d.c -I$(PATH1)/include
-	
-misc.o : misc.c misc.h
-	$(CC) -c misc.c
+	$(CROSS_COMPILE)$(CC) $(FLAGS) -c -mpowerpc64 -DSSL_ON -DOPENSSL_NO_KRB5 npreal2d.c -I$(PATH1)/include
+
+#MY_FLAGS += -g -DDEBUG
 
 ifneq ($(KERNELRELEASE),)
 obj-m := npreal2.o
+#ccflags-y += ${MY_FLAGS}
+#CC += ${MY_FLAGS}
 else
 KDIR	:= /lib/modules/$(shell uname -r)/build
 PWD	:= $(shell pwd)
 
 module:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	$(MAKE) -C $(KDIR) M=$(PWD) EXTRA_CFLAGS="$(FLAGS)" modules
 	cp -p npreal2.ko /lib/modules/$(shell uname -r)/kernel/drivers/char/
-#	cp -p npreal2.ko /lib/modules/$(shell uname -r)/misc/
 	depmod -a
 
-module_con:
-	KCPPFLAGS="-DCONCURRENT_SSL" $(MAKE) -C $(KDIR) M=$(PWD) modules
+module_debug:
+	$(MAKE) -C $(KDIR) M=$(PWD) EXTRA_CFLAGS="$(FLAGS) $(MY_FLAGS)" modules
 	cp -p npreal2.ko /lib/modules/$(shell uname -r)/kernel/drivers/char/
-#	cp -p npreal2.ko /lib/modules/$(shell uname -r)/misc/
 	depmod -a
-
 
 endif
 
 tools: mxaddsvr mxdelsvr mxcfmat mxloadsvr mxsetsec
 
-mxaddsvr: mxaddsvr.c
-	$(CC) -o mxaddsvr mxaddsvr.c
-	strip mxaddsvr
+mxaddsvr: mxaddsvr.c misc.c
+	$(CROSS_COMPILE)$(CC) $(FLAGS) -o mxaddsvr mxaddsvr.c misc.c
+	$(CROSS_COMPILE)strip mxaddsvr
 
-mxdelsvr: mxdelsvr.c
-	$(CC) -o mxdelsvr mxdelsvr.c
-	strip mxdelsvr
+mxdelsvr: mxdelsvr.c misc.c
+	$(CROSS_COMPILE)$(CC) $(FLAGS) -o mxdelsvr mxdelsvr.c misc.c
+	$(CROSS_COMPILE)strip mxdelsvr
 
 mxcfmat: mxcfmat.c
-	$(CC) -o mxcfmat mxcfmat.c
-	strip mxcfmat
+	$(CROSS_COMPILE)$(CC) $(FLAGS) -o mxcfmat mxcfmat.c
+	$(CROSS_COMPILE)strip mxcfmat
 
-mxloadsvr: mxloadsvr.c
-	$(CC) -o mxloadsvr mxloadsvr.c
-	strip mxloadsvr
+mxloadsvr: mxloadsvr.c misc.c
+	$(CROSS_COMPILE)$(CC) $(FLAGS) -o mxloadsvr mxloadsvr.c misc.c
+	$(CROSS_COMPILE)strip mxloadsvr
 	
-mxsetsec: mxsetsec.c
-	$(CC) -o mxsetsec mxsetsec.c
-	strip mxsetsec
+mxsetsec: mxsetsec.c misc.c
+	$(CROSS_COMPILE)$(CC) $(FLAGS) -o mxsetsec mxsetsec.c misc.c
+	$(CROSS_COMPILE)strip mxsetsec
 	
 clean:
 	rm -f *.o
@@ -123,12 +125,31 @@ clean:
 	rm -f mxsetsec
 	rm -f Module.symvers
 	rm -f .cache.mk
+	rm -f ./output/*
+	rm -f build.log
+	rm -f .*.cmd
 	
-pack:
+disk:
+	@sudo $(MAKE) clean
+	@rm -f $(MX_VER_H)
+	@echo "#ifndef _NP_VER_H_" >> $(MX_VER_H)
+	@echo "#define _NP_VER_H_" >> $(MX_VER_H)
+	@echo -n "#define NPREAL_VERSION \"Ver" >> $(MX_VER_H)
+	@echo -n "$(BUILD_VERSION)" >> $(MX_VER_H)
+	@echo "\"" >> $(MX_VER_H)
+	@echo -n "#define NPREAL_BUILD \"Build " >> $(MX_VER_H)
+	@echo -n "$(BUILD_DATE)" >> $(MX_VER_H)
+	@echo "\"" >> $(MX_VER_H)
+	@echo "#endif" >> $(MX_VER_H)
+	@echo "New $(MX_VER_H) is created."
+	-rm -fri ../disk/*
 	rm -rf ../disk/moxa
 	mkdir ../disk/moxa
-	cp * ../disk/moxa
+	cp -R * ../disk/moxa
 	tar -C ../disk -zcvf ../disk/npreal2_v${BUILD_VERSION}_build_${BUILD_DATE}.tgz moxa
 	rm -rf ../disk/moxa
-	cp VERSION.TXT ../disk
+	cp -f VERSION.TXT ../disk
+	cp -f README.TXT ../disk
+	@echo "Done"
+
 
